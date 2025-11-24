@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Revisu.Data;
 using Revisu.Domain.Dtos;
+using Revisu.Domain.Entities;
 using Revisu.Services;
 using Revisu.Services.Biblioteca;
 using Revisu.Services.Quiz;
@@ -121,6 +123,86 @@ namespace Revisu.Controllers
             var result = await svc.RecommendHybridAsync(idUsuario, top);
             return Ok(result);
         }
+
+
+        [HttpGet("50-obras")]
+        public async Task<ActionResult<IEnumerable<ObraDTO>>> Get50Obras()
+        {
+            var obras = await _db.Obras
+                .Where(o => !string.IsNullOrWhiteSpace(o.Sinopse) && o.NotaMedia > 0)
+                .OrderByDescending(o => o.Populariedade)
+                .Take(50)
+                .Select(o => new ObraDTO
+                {
+                    IdObra = o.IdObra,
+                    IdTmdb = o.IdTmdb,
+                    Titulo = o.Nome,
+                    Imagem = o.Imagem,
+                    NotaMedia = o.NotaMedia,
+                    Tipo = o.Tipo,
+                    Generos = o.Generos.Select(g => g.Nome).ToList()
+                })
+                .ToListAsync();
+
+            return Ok(obras);
+        }
+
+
+        // ------------------------- 2) 50 ATORES -------------------------
+        [HttpGet("50-atores")]
+        public async Task<ActionResult<IEnumerable<ElencoDTO>>> Get50Atores()
+        {
+            var atores = await _db.Elencos
+                .Where(e => e.Cargo == "Ator")
+                .OrderBy(e => Guid.NewGuid())
+                .Take(50)
+                .Select(e => new ElencoDTO
+                {
+                    IdElenco = e.IdElenco,
+                    IdTmdb = e.IdTmdb,
+                    Nome = e.Nome,
+                    Foto = e.Foto,
+                    Cargo = e.Cargo,
+                    Sexo = e.Sexo,
+                    Generos = e.Obras
+                        .SelectMany(o => o.Generos)
+                        .Select(g => g.Nome)
+                        .Distinct()
+                        .ToList()
+                })
+                .ToListAsync();
+
+            return Ok(atores);
+        }
+
+
+        // ------------------------- 3) 50 DIRETORES -------------------------
+        [HttpGet("50-diretores")]
+        public async Task<ActionResult<IEnumerable<ElencoDTO>>> Get50Diretores()
+        {
+            var diretores = await _db.Elencos
+                .Where(e => e.Cargo == "Diretor")
+                .OrderBy(e => Guid.NewGuid())
+                .Take(50)
+                .Select(e => new ElencoDTO
+                {
+                    IdElenco = e.IdElenco,
+                    IdTmdb = e.IdTmdb,
+                    Nome = e.Nome,
+                    Foto = e.Foto,
+                    Cargo = e.Cargo,
+                    Sexo = e.Sexo,
+                    Generos = e.Obras
+                        .SelectMany(o => o.Generos)
+                        .Select(g => g.Nome)
+                        .Distinct()
+                        .ToList()
+                })
+                .ToListAsync();
+
+            return Ok(diretores);
+        }
+
 
     }
 }
