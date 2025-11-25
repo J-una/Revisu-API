@@ -3,7 +3,7 @@ using Revisu.Data;
 using Revisu.Domain.Dtos;
 using Revisu.Domain.Entities;
 
-namespace Revisu.Services.Biblioteca
+namespace Revisu.Infrastructure.Services.Biblioteca
 {
     public class BibliotecaService
     {

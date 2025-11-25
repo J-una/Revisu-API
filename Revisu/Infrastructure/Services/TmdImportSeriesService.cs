@@ -4,7 +4,7 @@ using Revisu.Domain.Entities;
 using Revisu.Infrastructure;
 using System.Text.Json;
 
-namespace Revisu.Services
+namespace Revisu.Infrastructure.Services
 {
     public class TmdImportSeriesService
     {

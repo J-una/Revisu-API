@@ -3,7 +3,7 @@ using Revisu.Data;
 using Revisu.Domain.Dtos;
 using Revisu.Domain.Entities;
 
-namespace Revisu.Services.Quiz
+namespace Revisu.Infrastructure.Services.Quiz
 {
     public class QuizService
     {

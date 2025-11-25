@@ -2,9 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Revisu.Data;
 using Revisu.Infrastructure;
-using Revisu.Services;
-using Revisu.Services.Biblioteca;
-using Revisu.Services.Quiz;
+using Revisu.Infrastructure.Services;
+using Revisu.Infrastructure.Services.Biblioteca;
+using Revisu.Infrastructure.Services.ImportacaoTmdb;
+using Revisu.Infrastructure.Services.Quiz;
+using Revisu.Recommendation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,10 +41,12 @@ builder.Services.AddScoped<AtualizarGenerosSeriesService>();
 builder.Services.AddScoped<AtualizarElencoTmdbService>();
 builder.Services.AddScoped<AtualizarElencoService>();
 builder.Services.AddScoped<AtualizarGenerosSeriesTmdbService>();
-builder.Services.AddScoped<RecomendacaoService>();
+builder.Services.AddScoped<RecomendacaoLentaService>();
 builder.Services.AddScoped<BibliotecaService>();
 builder.Services.AddScoped<RecomendacaoServiceOptimizado>();
 builder.Services.AddScoped<RecomendacaoHibridaService>();
+builder.Services.AddSingleton<GlobalRecommendationCache>();
+builder.Services.AddScoped<RecomendacaoService>();
 //builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("tmdb", (sp, client) =>
 {

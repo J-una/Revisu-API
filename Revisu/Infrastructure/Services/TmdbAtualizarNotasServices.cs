@@ -5,7 +5,7 @@ using Revisu.Infrastructure;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace Revisu.Services
+namespace Revisu.Infrastructure.Services
 {
     public class TmdbAtualizarNotasService
     {

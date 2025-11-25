@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Revisu.Services;
+using Revisu.Infrastructure.Services;
+using Revisu.Infrastructure.Services.ImportacaoTmdb;
 
 namespace Revisu.Controllers
 {

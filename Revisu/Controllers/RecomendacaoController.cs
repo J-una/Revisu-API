@@ -3,9 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Revisu.Data;
 using Revisu.Domain.Dtos;
 using Revisu.Domain.Entities;
-using Revisu.Services;
-using Revisu.Services.Biblioteca;
-using Revisu.Services.Quiz;
+using Revisu.Infrastructure.Services.Biblioteca;
+using Revisu.Infrastructure.Services.Quiz;
+
 
 namespace Revisu.Controllers
 {
@@ -97,10 +97,10 @@ namespace Revisu.Controllers
             return Ok("Item removido da biblioteca!");
         }
 
-        [HttpGet("recomendar")]
+        [HttpGet("recomendar-lenta")]
         public async Task<IActionResult> Recomendar(Guid idUsuario)
         {
-            var service = new RecomendacaoService(_db);
+            var service = new RecomendacaoLentaService(_db);
             var recomendacoes = await service.RecomendarObrasAsync(idUsuario);
 
             return Ok(recomendacoes);
@@ -199,6 +199,49 @@ namespace Revisu.Controllers
                 .ToListAsync();
 
             return Ok(diretores);
+        }
+
+        [HttpGet("detalhes-obras/{id:guid}")]
+        public async Task<ActionResult<DetalhesObraDTO>> GetObraById(Guid id)
+        {
+            var obra = await _db.Obras
+                .Where(o => o.IdObra == id)
+                .Select(o => new DetalhesObraDTO
+                {
+                    IdObra = o.IdObra,
+                    IdTmdb = o.IdTmdb,
+                    Titulo = o.Nome,
+                    Sinopse = o.Sinopse,
+                    Imagem = o.Imagem,
+                    NotaMedia = o.NotaMedia,
+                    Tipo = o.Tipo,
+                    Generos = o.Generos.Select(g => g.Nome).ToList(),
+
+                    // Atores / Diretores
+                    Atores = o.Elenco.Select(e => new AtorDTO
+                    {
+                        IdElenco = e.IdElenco,
+                        IdTmdb = e.IdTmdb,
+                        Nome = e.Nome,
+                        Foto = e.Foto,
+                        Cargo = e.Cargo,
+                        Sexo = e.Sexo,
+
+                        // Gêneros de todas as obras que esse ator participou
+                        Generos = e.Obras
+                            .SelectMany(ob => ob.Generos)
+                            .Select(g => g.Nome)
+                            .Distinct()
+                            .ToList()
+
+                    }).ToList()
+                })
+                .FirstOrDefaultAsync();
+
+            if (obra == null)
+                return NotFound(new { message = "Obra não encontrada." });
+
+            return Ok(obra);
         }
 
 

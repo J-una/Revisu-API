@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Revisu.Services
+namespace Revisu.Infrastructure.Services
 {
     public class RottenTomatoesImportService
     {

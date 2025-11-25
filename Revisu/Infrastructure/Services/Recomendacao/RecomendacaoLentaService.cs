@@ -9,11 +9,11 @@ using Revisu.Domain.Entities;
 using Revisu.Infrastructure.MachineLearn;
 using System.Text.RegularExpressions;
 
-public class RecomendacaoService
+public class RecomendacaoLentaService
 {
     private readonly AppDbContext _db;
 
-    public RecomendacaoService(AppDbContext db)
+    public RecomendacaoLentaService(AppDbContext db)
     {
         _db = db;
     }

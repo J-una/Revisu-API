@@ -5,7 +5,7 @@ using Revisu.Infrastructure;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Revisu.Services
+namespace Revisu.Infrastructure.Services.ImportacaoTmdb
 {
     public class AtualizarGenerosSeriesTmdbService
     {
