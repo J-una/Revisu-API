@@ -150,13 +150,13 @@ namespace Revisu.Controllers
 
         // ------------------------- 2) 50 ATORES -------------------------
         [HttpGet("50-atores")]
-        public async Task<ActionResult<IEnumerable<ElencoDTO>>> Get50Atores()
+        public async Task<ActionResult<IEnumerable<AtorDTO>>> Get50Atores()
         {
             var atores = await _db.Elencos
                 .Where(e => e.Cargo == "Ator")
                 .OrderBy(e => Guid.NewGuid())
                 .Take(50)
-                .Select(e => new ElencoDTO
+                .Select(e => new AtorDTO
                 {
                     IdElenco = e.IdElenco,
                     IdTmdb = e.IdTmdb,
@@ -178,13 +178,13 @@ namespace Revisu.Controllers
 
         // ------------------------- 3) 50 DIRETORES -------------------------
         [HttpGet("50-diretores")]
-        public async Task<ActionResult<IEnumerable<ElencoDTO>>> Get50Diretores()
+        public async Task<ActionResult<IEnumerable<DiretorDTO>>> Get50Diretores()
         {
             var diretores = await _db.Elencos
                 .Where(e => e.Cargo == "Diretor")
                 .OrderBy(e => Guid.NewGuid())
                 .Take(50)
-                .Select(e => new ElencoDTO
+                .Select(e => new DiretorDTO
                 {
                     IdElenco = e.IdElenco,
                     IdTmdb = e.IdTmdb,
@@ -192,10 +192,8 @@ namespace Revisu.Controllers
                     Foto = e.Foto,
                     Cargo = e.Cargo,
                     Sexo = e.Sexo,
-                    Generos = e.Obras
-                        .SelectMany(o => o.Generos)
-                        .Select(g => g.Nome)
-                        .Distinct()
+                    Obras = e.Obras
+                        .Select(o => o.Nome)
                         .ToList()
                 })
                 .ToListAsync();
