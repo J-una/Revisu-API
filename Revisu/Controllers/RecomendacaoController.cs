@@ -201,11 +201,11 @@ namespace Revisu.Controllers
             return Ok(diretores);
         }
 
-        [HttpGet("detalhes-obras/{id:guid}")]
-        public async Task<ActionResult<DetalhesObraDTO>> GetObraById(Guid id)
+        [HttpGet("detalhes-obras/{idObra:guid}")]
+        public async Task<ActionResult<DetalhesObraDTO>> GetObraById(Guid idObra)
         {
             var obra = await _db.Obras
-                .Where(o => o.IdObra == id)
+                .Where(o => o.IdObra == idObra)
                 .Select(o => new DetalhesObraDTO
                 {
                     IdObra = o.IdObra,
