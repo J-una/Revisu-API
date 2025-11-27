@@ -16,20 +16,29 @@ namespace Revisu.Controllers
         }
 
 
-        ////Rodar esse primeiro
-        //[HttpPost("admin/build-cache")]
-        //public async Task<IActionResult> BuildCache([FromServices] RecomendacaoServiceOptimizado service)
-        //{
-        //    await service.BuildFeatureCacheAsync();
-        //    return Ok("CACHE gerado com sucesso!");
-        //}
-        ////Rodar esse depois de gerar o cache
-        //[HttpPost("admin/train-model")]
+        //Rodar esse primeiro
+        [HttpPost("admin/build-cache-optimizado")]
+        public async Task<IActionResult> BuildCache([FromServices] RecomendacaoServiceOptimizado service)
+        {
+            await service.BuildFeatureCacheAsync();
+            return Ok("CACHE gerado com sucesso!");
+        }
+        //Rodar esse depois de gerar o cache //Remover o IDUsuario apenas para teste de algoritmo
+        //[HttpPost("admin/train-model-optmimizado")]
         //public async Task<IActionResult> TrainModel([FromServices] RecomendacaoServiceOptimizado service)
         //{
         //    await service.TrainAndSaveModelAsync();
         //    return Ok("MODELO treinado e salvo!");
         //}
+        [HttpPost("admin/train-model-optimizado/{userId:guid}")]
+        public async Task<IActionResult> TrainModel(
+        Guid userId,
+        [FromServices] RecomendacaoServiceOptimizado service)
+        {
+            await service.TrainAndSaveModelAsync(userId);
+            return Ok("MODELO treinado e salvo!");
+        }
+
 
 
 
@@ -83,11 +92,11 @@ namespace Revisu.Controllers
         // Recomendações
         // ----------------------------------------------------------
 
-        //[HttpGet("{idUsuario}")]
-        //public async Task<IActionResult> Recommend(Guid idUsuario, int top = 10)
-        //{
-        //    var lista = await _recomendacaoservice.RecomendarAsync(idUsuario, top);
-        //    return Ok(lista);
-        //}
+        [HttpGet("{idUsuario}")]
+        public async Task<IActionResult> Recommend(Guid idUsuario, int top = 10)
+        {
+            var lista = await _recomendacaoservice.RecomendarAsync(idUsuario, top);
+            return Ok(lista);
+        }
     }
 }

@@ -117,193 +117,408 @@ using Revisu.Domain.Entities;
             // atualiza cache em memória
             _cache = new ConcurrentDictionary<Guid, ObraFeatureCached>(cache);
         }
-        #endregion
+    #endregion
 
-        #region Train model (offline)
-        /// <summary>
-        /// Treina um modelo FastTree (ou outro) usando as features geradas no cache
-        /// e salva em disco. Deve ser executado OFFLINE.
-        /// </summary>
-        public async Task TrainAndSaveModelAsync(CancellationToken cancellationToken = default)
+    #region Train model (offline)
+    /// <summary>
+    /// Treina um modelo FastTree (ou outro) usando as features geradas no cache
+    /// e salva em disco. Deve ser executado OFFLINE.
+    /// </summary>
+    //public async Task TrainAndSaveModelAsync(CancellationToken cancellationToken = default)
+    //{
+    //    // carrega cache (exigido)
+    //    if (!File.Exists(_cachePath))
+    //        throw new InvalidOperationException("Cache não encontrado. Rode BuildFeatureCacheAsync primeiro.");
+
+    //    var cachedList = JsonSerializer.Deserialize<List<ObraFeatureCached>>(await File.ReadAllTextAsync(_cachePath, cancellationToken))
+    //                     ?? new List<ObraFeatureCached>();
+
+    //    // Monta dataset simples: label = 1 se obra tem NotaMedia >= 7 (exemplo)
+    //    // Melhor: use biblioteca real do usuário para gerar labels reais; aqui usamos heurística/placeholder.
+    //    var training = cachedList
+    //        .Select(c => new ObraFeature
+    //        {
+    //            GeneroSimilarity = 0f,
+    //            ElencoSimilarity = 0f,
+    //            SinopseSimilarity = 0f,
+    //            NotaMedia = c.NotaMedia,
+    //            Popularidade = c.Popularidade,
+    //            Tipo = c.Tipo,
+    //            Label = c.NotaMedia >= 7f // placeholder label: "boa obra"
+    //        })
+    //        .ToList();
+
+    //    var data = _ml.Data.LoadFromEnumerable(training);
+
+    //    var pipeline = _ml.Transforms.Categorical.OneHotEncoding("Tipo")
+    //        .Append(_ml.Transforms.Concatenate("Features",
+    //            nameof(ObraFeature.GeneroSimilarity),
+    //            nameof(ObraFeature.ElencoSimilarity),
+    //            nameof(ObraFeature.SinopseSimilarity),
+    //            nameof(ObraFeature.NotaMedia),
+    //            nameof(ObraFeature.Popularidade),
+    //            "Tipo"))
+    //        .Append(_ml.BinaryClassification.Trainers.FastTree(numberOfLeaves: 50, numberOfTrees: 200));
+
+    //    var model = pipeline.Fit(data);
+
+    //    // salva
+    //    using var fs = File.Create(_modelPath);
+    //    _ml.Model.Save(model, data.Schema, fs);
+
+    //    // mantém em memória
+    //    _model = model;
+    //}
+    public async Task TrainAndSaveModelAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(_cachePath))
+            throw new InvalidOperationException("Cache não encontrado. Rode BuildFeatureCacheAsync primeiro.");
+
+        var cache = JsonSerializer.Deserialize<List<ObraFeatureCached>>(
+            await File.ReadAllTextAsync(_cachePath, cancellationToken))
+            ?? new List<ObraFeatureCached>();
+
+        // histórico real do usuário
+        var userHistory = await _db.Biblioteca
+            .Where(b => b.IdUsuario == userId && !b.Excluido && b.IdObra != null)
+            .Select(b => b.IdObra!.Value)
+            .ToListAsync(cancellationToken);
+
+        var userWatched = new HashSet<Guid>(userHistory);
+
+        // perfil real do usuário
+        var watchedFeatures = cache.Where(c => userWatched.Contains(c.IdObra)).ToList();
+
+        var userGenres = watchedFeatures.SelectMany(c => c.Generos).Distinct().ToHashSet();
+        var userElenco = watchedFeatures.SelectMany(c => c.ElencoIds).Distinct().ToHashSet();
+        var userTokens = watchedFeatures.SelectMany(c => c.SinopseTokens).Distinct().ToHashSet();
+
+        var training = cache.Select(c =>
         {
-            // carrega cache (exigido)
-            if (!File.Exists(_cachePath))
-                throw new InvalidOperationException("Cache não encontrado. Rode BuildFeatureCacheAsync primeiro.");
+            // similaridade real
+            float generoSim = c.Generos.Intersect(userGenres).Count() / (float)(c.Generos.Length + userGenres.Count + 1);
+            float elencoSim = c.ElencoIds.Intersect(userElenco).Count() / (float)(c.ElencoIds.Length + userElenco.Count + 1);
+            float sinopseSim = c.SinopseTokens.Intersect(userTokens).Count() / (float)(c.SinopseTokens.Length + userTokens.Count + 1);
 
-            var cachedList = JsonSerializer.Deserialize<List<ObraFeatureCached>>(await File.ReadAllTextAsync(_cachePath, cancellationToken))
-                             ?? new List<ObraFeatureCached>();
+            return new ObraFeature
+            {
+                GeneroSimilarity = generoSim,
+                ElencoSimilarity = elencoSim,
+                SinopseSimilarity = sinopseSim,
+                NotaMedia = c.NotaMedia,
+                Popularidade = c.Popularidade,
+                Tipo = c.Tipo,
+                Label = userWatched.Contains(c.IdObra) // AGORA O LABEL É REAL
+            };
 
-            // Monta dataset simples: label = 1 se obra tem NotaMedia >= 7 (exemplo)
-            // Melhor: use biblioteca real do usuário para gerar labels reais; aqui usamos heurística/placeholder.
-            var training = cachedList
-                .Select(c => new ObraFeature
-                {
-                    GeneroSimilarity = 0f,
-                    ElencoSimilarity = 0f,
-                    SinopseSimilarity = 0f,
-                    NotaMedia = c.NotaMedia,
-                    Popularidade = c.Popularidade,
-                    Tipo = c.Tipo,
-                    Label = c.NotaMedia >= 7f // placeholder label: "boa obra"
-                })
-                .ToList();
+        }).ToList();
 
-            var data = _ml.Data.LoadFromEnumerable(training);
+        var data = _ml.Data.LoadFromEnumerable(training);
 
-            var pipeline = _ml.Transforms.Categorical.OneHotEncoding("Tipo")
-                .Append(_ml.Transforms.Concatenate("Features",
-                    nameof(ObraFeature.GeneroSimilarity),
-                    nameof(ObraFeature.ElencoSimilarity),
-                    nameof(ObraFeature.SinopseSimilarity),
-                    nameof(ObraFeature.NotaMedia),
-                    nameof(ObraFeature.Popularidade),
-                    "Tipo"))
-                .Append(_ml.BinaryClassification.Trainers.FastTree(numberOfLeaves: 50, numberOfTrees: 200));
+        var pipeline = _ml.Transforms.Categorical.OneHotEncoding("Tipo")
+            .Append(_ml.Transforms.Concatenate("Features",
+                nameof(ObraFeature.GeneroSimilarity),
+                nameof(ObraFeature.ElencoSimilarity),
+                nameof(ObraFeature.SinopseSimilarity),
+                nameof(ObraFeature.NotaMedia),
+                nameof(ObraFeature.Popularidade),
+                "Tipo"))
+            .Append(_ml.BinaryClassification.Trainers.FastTree());
 
-            var model = pipeline.Fit(data);
+        var model = pipeline.Fit(data);
 
-            // salva
-            using var fs = File.Create(_modelPath);
-            _ml.Model.Save(model, data.Schema, fs);
+        using var fs = File.Create(_modelPath);
+        _ml.Model.Save(model, data.Schema, fs);
 
-            // mantém em memória
-            _model = model;
-        }
-        #endregion
+        _model = model;
+    }
 
-        #region Recomendar (rápido)
-        /// <summary>
-        /// Recomenda obras para um usuário usando:
-        /// - modelo carregado em disco (rápido) OR
-        /// - heurística ponderada se não houver modelo
-        /// </summary>
-        public async Task<List<ObraDTO>> RecomendarObrasAsync(Guid idUsuario, int quantidade = 10, CancellationToken cancellationToken = default)
+    #endregion
+
+    #region Recomendar (rápido)
+    /// <summary>
+    /// Recomenda obras para um usuário usando:
+    /// - modelo carregado em disco (rápido) OR
+    /// - heurística ponderada se não houver modelo
+    /// </summary>
+    //public async Task<List<ObraDTO>> RecomendarObrasAsync(Guid idUsuario, int quantidade = 10, CancellationToken cancellationToken = default)
+    //{
+    //    // Carrega cache em memória se necessário
+    //    if (_cache == null || !_cache.Any())
+    //        await LoadCacheIntoMemoryAsync(cancellationToken);
+
+    //    // Carrega modelo se existir
+    //    if (_model == null && File.Exists(_modelPath))
+    //    {
+    //        using var fs = File.OpenRead(_modelPath);
+    //        _model = _ml.Model.Load(fs, out _);
+    //    }
+
+    //    // Carrega biblioteca do usuário (somente ids)
+    //    var biblioteca = await _db.Biblioteca
+    //        .Where(b => b.IdUsuario == idUsuario && !b.Excluido)
+    //        .Select(b => new { b.IdObra, b.IdElenco })
+    //        .AsNoTracking()
+    //        .ToListAsync(cancellationToken);
+
+    //    var obrasAssistidasIds = new HashSet<Guid>(biblioteca.Where(x => x.IdObra.HasValue).Select(x => x.IdObra!.Value));
+    //    var elencoUsuario = biblioteca.Where(b => b.IdElenco.HasValue).Select(b => b.IdElenco!.Value).ToList();
+
+    //    // perfil do usuário: contagem de generos e elenco
+    //    var obrasAssistidasCached = _cache.Values.Where(c => obrasAssistidasIds.Contains(c.IdObra)).ToList();
+
+    //    var generosFavCounts = obrasAssistidasCached.SelectMany(x => x.Generos)
+    //        .GroupBy(g => g)
+    //        .ToDictionary(g => g.Key, g => g.Count());
+
+    //    var elencoFavCounts = obrasAssistidasCached.SelectMany(x => x.ElencoIds)
+    //        .GroupBy(e => e)
+    //        .ToDictionary(g => g.Key, g => g.Count());
+
+    //    // prepara predição (se modelo existe)
+    //    PredictionEngine<ObraFeature, ObraPrediction>? engine = null;
+    //    if (_model != null)
+    //        engine = _ml.Model.CreatePredictionEngine<ObraFeature, ObraPrediction>(_model);
+
+    //    // scoring paralelo sobre cache (muitos itens, mas só memória)
+    //    var scored = new ConcurrentBag<(Guid IdObra, float Score)>();
+
+    //    // preparar local copies for speed
+    //    var cacheValues = _cache.Values.ToArray();
+    //    var userGenreKeys = new HashSet<Guid>(generosFavCounts.Keys);
+    //    var userElencoKeys = new HashSet<Guid>(elencoFavCounts.Keys);
+
+    //    Parallel.ForEach(cacheValues, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) }, obraFeat =>
+    //    {
+    //        if (cancellationToken.IsCancellationRequested) return;
+
+    //        // skip if user already watched
+    //        if (obrasAssistidasIds.Contains(obraFeat.IdObra)) return;
+
+    //        // compute features fast using sets and arrays prepared in cache
+    //        float generoSim = 0f;
+    //        if (userGenreKeys.Count > 0 && obraFeat.Generos != null && obraFeat.Generos.Length > 0)
+    //        {
+    //            var inter = obraFeat.Generos.Count(g => userGenreKeys.Contains(g));
+    //            var union = obraFeat.Generos.Length + userGenreKeys.Count;
+    //            generoSim = union == 0 ? 0f : (float)inter / union;
+    //        }
+
+    //        float elencoSim = 0f;
+    //        if (userElencoKeys.Count > 0 && obraFeat.ElencoIds != null && obraFeat.ElencoIds.Length > 0)
+    //        {
+    //            var inter = obraFeat.ElencoIds.Count(e => userElencoKeys.Contains(e));
+    //            elencoSim = userElencoKeys.Count == 0 ? 0f : (float)inter / userElencoKeys.Count;
+    //        }
+
+    //        // sinopse similarity using jaccard tokens (fast array ops)
+    //        float sinopseSim = 0f;
+    //        if (obraFeat.SinopseTokens?.Length > 0 && obrasAssistidasCached.Count > 0)
+    //        {
+    //            // build user token set once using assistidas cache (could be cached per request if many)
+    //            var userTokens = new HashSet<string>(
+    //                obrasAssistidasCached.SelectMany(a => a.SinopseTokens).Distinct()
+    //            );
+    //            var inter = obraFeat.SinopseTokens.Count(t => userTokens.Contains(t));
+    //            var union = userTokens.Count + obraFeat.SinopseTokens.Length;
+    //            sinopseSim = union == 0 ? 0f : (float)inter / union;
+    //        }
+
+    //        var featureInstance = new ObraFeature
+    //        {
+    //            GeneroSimilarity = generoSim,
+    //            ElencoSimilarity = elencoSim,
+    //            SinopseSimilarity = sinopseSim,
+    //            NotaMedia = obraFeat.NotaMedia,
+    //            Popularidade = obraFeat.Popularidade,
+    //            Tipo = obraFeat.Tipo
+    //        };
+
+    //        float score = 0f;
+
+    //        if (engine != null)
+    //        {
+    //            // model prediction
+    //            try
+    //            {
+    //                var pred = engine.Predict(featureInstance);
+    //                score = pred.Score;
+    //            }
+    //            catch
+    //            {
+    //                // fallback heuristic if prediction fails
+    //                score = HeuristicScore(featureInstance);
+    //            }
+    //        }
+    //        else
+    //        {
+    //            score = HeuristicScore(featureInstance);
+    //        }
+
+    //        scored.Add((obraFeat.IdObra, score));
+    //    });
+
+    //    // take top N
+    //    var top = scored
+    //        .OrderByDescending(t => t.Score)
+    //        .Take(quantidade)
+    //        .Select(t => t.IdObra)
+    //        .ToList();
+
+    //    // prepare DTO results by fetching minimal metadata for chosen ids
+    //    var topMeta = await _db.Obras
+    //        .Where(o => top.Contains(o.IdObra))
+    //        .Select(o => new ObraDTO
+    //        {
+    //            IdObra = o.IdObra,
+    //            IdTmdb = o.IdTmdb,
+    //            Titulo = o.Nome,
+    //            Imagem = o.Imagem,
+    //            NotaMedia = o.NotaMedia,
+    //            Tipo = o.Tipo,
+    //            Generos = o.Generos.Select(g => g.Nome).ToList()
+    //        })
+    //        .AsNoTracking()
+    //        .ToListAsync(cancellationToken);
+
+    //    // preserve order (top list ordering)
+    //    var ordered = top.Select(id => topMeta.First(m => m.IdObra == id)).ToList();
+
+    //    return ordered;
+    //}
+
+    public async Task<List<ObraDTO>> RecomendarObrasAsync(
+        Guid idUsuario,
+        int quantidade = 50,
+        CancellationToken cancellationToken = default)
         {
-            // Carrega cache em memória se necessário
+            // 1) GARANTIR CACHE EM MEMÓRIA
             if (_cache == null || !_cache.Any())
                 await LoadCacheIntoMemoryAsync(cancellationToken);
 
-            // Carrega modelo se existir
+            // 2) CARREGAR MODELO (SE EXISTIR)
             if (_model == null && File.Exists(_modelPath))
             {
                 using var fs = File.OpenRead(_modelPath);
                 _model = _ml.Model.Load(fs, out _);
             }
 
-            // Carrega biblioteca do usuário (somente ids)
-            var biblioteca = await _db.Biblioteca
+            // 3) HISTÓRICO REAL DO USUÁRIO (TABELA BIBLIOTECA)
+            var historico = await _db.Biblioteca
                 .Where(b => b.IdUsuario == idUsuario && !b.Excluido)
                 .Select(b => new { b.IdObra, b.IdElenco })
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
 
-            var obrasAssistidasIds = new HashSet<Guid>(biblioteca.Where(x => x.IdObra.HasValue).Select(x => x.IdObra!.Value));
-            var elencoUsuario = biblioteca.Where(b => b.IdElenco.HasValue).Select(b => b.IdElenco!.Value).ToList();
+            var obrasAssistidas = historico
+                .Where(x => x.IdObra.HasValue)
+                .Select(x => x.IdObra!.Value)
+                .ToHashSet();
 
-            // perfil do usuário: contagem de generos e elenco
-            var obrasAssistidasCached = _cache.Values.Where(c => obrasAssistidasIds.Contains(c.IdObra)).ToList();
+            var elencoAssistido = historico
+                .Where(x => x.IdElenco.HasValue)
+                .Select(x => x.IdElenco!.Value)
+                .ToList();
 
-            var generosFavCounts = obrasAssistidasCached.SelectMany(x => x.Generos)
+            // 4) PERFIL DO USUÁRIO BASEADO NAS OBRAS REALMENTE ASSISTIDAS
+            var obrasAssistidasCached = _cache.Values
+                .Where(c => obrasAssistidas.Contains(c.IdObra))
+                .ToList();
+
+            // Gêneros favoritos
+            var generosFav = obrasAssistidasCached
+                .SelectMany(o => o.Generos)
                 .GroupBy(g => g)
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            var elencoFavCounts = obrasAssistidasCached.SelectMany(x => x.ElencoIds)
+            // Elenco favorito
+            var elencoFav = obrasAssistidasCached
+                .SelectMany(o => o.ElencoIds)
                 .GroupBy(e => e)
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            // prepara predição (se modelo existe)
-            PredictionEngine<ObraFeature, ObraPrediction>? engine = null;
-            if (_model != null)
-                engine = _ml.Model.CreatePredictionEngine<ObraFeature, ObraPrediction>(_model);
+            var userGenreSet = new HashSet<Guid>(generosFav.Keys);
+            var userElencoSet = new HashSet<Guid>(elencoFav.Keys);
 
-            // scoring paralelo sobre cache (muitos itens, mas só memória)
+            // Tokens da sinopse do usuário
+            var userTokens = new HashSet<string>(
+                obrasAssistidasCached.SelectMany(o => o.SinopseTokens).Distinct()
+            );
+
+            // 5) PREPARAR PREDIÇÃO
+            PredictionEngine<ObraFeature, ObraPrediction>? engine =
+                _model != null ? _ml.Model.CreatePredictionEngine<ObraFeature, ObraPrediction>(_model) : null;
+
             var scored = new ConcurrentBag<(Guid IdObra, float Score)>();
+            var cacheArray = _cache.Values.ToArray();
 
-            // preparar local copies for speed
-            var cacheValues = _cache.Values.ToArray();
-            var userGenreKeys = new HashSet<Guid>(generosFavCounts.Keys);
-            var userElencoKeys = new HashSet<Guid>(elencoFavCounts.Keys);
-
-            Parallel.ForEach(cacheValues, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) }, obraFeat =>
-            {
-                if (cancellationToken.IsCancellationRequested) return;
-
-                // skip if user already watched
-                if (obrasAssistidasIds.Contains(obraFeat.IdObra)) return;
-
-                // compute features fast using sets and arrays prepared in cache
-                float generoSim = 0f;
-                if (userGenreKeys.Count > 0 && obraFeat.Generos != null && obraFeat.Generos.Length > 0)
+            Parallel.ForEach(cacheArray,
+                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount - 1 },
+                obra =>
                 {
-                    var inter = obraFeat.Generos.Count(g => userGenreKeys.Contains(g));
-                    var union = obraFeat.Generos.Length + userGenreKeys.Count;
-                    generoSim = union == 0 ? 0f : (float)inter / union;
-                }
+                    if (obrasAssistidas.Contains(obra.IdObra))
+                        return;
 
-                float elencoSim = 0f;
-                if (userElencoKeys.Count > 0 && obraFeat.ElencoIds != null && obraFeat.ElencoIds.Length > 0)
-                {
-                    var inter = obraFeat.ElencoIds.Count(e => userElencoKeys.Contains(e));
-                    elencoSim = userElencoKeys.Count == 0 ? 0f : (float)inter / userElencoKeys.Count;
-                }
+                    // --- Similaridade de gêneros
+                    float genSim = 0f;
+                    if (obra.Generos.Length > 0 && userGenreSet.Count > 0)
+                    {
+                        var inter = obra.Generos.Count(g => userGenreSet.Contains(g));
+                        var union = obra.Generos.Length + userGenreSet.Count;
+                        genSim = union == 0 ? 0 : (float)inter / union;
+                    }
 
-                // sinopse similarity using jaccard tokens (fast array ops)
-                float sinopseSim = 0f;
-                if (obraFeat.SinopseTokens?.Length > 0 && obrasAssistidasCached.Count > 0)
-                {
-                    // build user token set once using assistidas cache (could be cached per request if many)
-                    var userTokens = new HashSet<string>(
-                        obrasAssistidasCached.SelectMany(a => a.SinopseTokens).Distinct()
-                    );
-                    var inter = obraFeat.SinopseTokens.Count(t => userTokens.Contains(t));
-                    var union = userTokens.Count + obraFeat.SinopseTokens.Length;
-                    sinopseSim = union == 0 ? 0f : (float)inter / union;
-                }
+                    // --- Similaridade de elenco
+                    float elencoSim = 0f;
+                    if (obra.ElencoIds.Length > 0 && userElencoSet.Count > 0)
+                    {
+                        var inter = obra.ElencoIds.Count(e => userElencoSet.Contains(e));
+                        elencoSim = (float)inter / userElencoSet.Count;
+                    }
 
-                var featureInstance = new ObraFeature
-                {
-                    GeneroSimilarity = generoSim,
-                    ElencoSimilarity = elencoSim,
-                    SinopseSimilarity = sinopseSim,
-                    NotaMedia = obraFeat.NotaMedia,
-                    Popularidade = obraFeat.Popularidade,
-                    Tipo = obraFeat.Tipo
-                };
+                    // --- Similaridade de sinopse
+                    float sinopseSim = 0f;
+                    if (obra.SinopseTokens.Length > 0 && userTokens.Count > 0)
+                    {
+                        var inter = obra.SinopseTokens.Count(t => userTokens.Contains(t));
+                        var union = obra.SinopseTokens.Length + userTokens.Count;
+                        sinopseSim = union == 0 ? 0 : (float)inter / union;
+                    }
 
-                float score = 0f;
+                    // --- Criar Feature
+                    var feat = new ObraFeature
+                    {
+                        GeneroSimilarity = genSim,
+                        ElencoSimilarity = elencoSim,
+                        SinopseSimilarity = sinopseSim,
+                        NotaMedia = obra.NotaMedia,
+                        Popularidade = obra.Popularidade,
+                        Tipo = obra.Tipo
+                    };
 
-                if (engine != null)
-                {
-                    // model prediction
+                    float score;
                     try
                     {
-                        var pred = engine.Predict(featureInstance);
-                        score = pred.Score;
+                        score = engine != null ? engine.Predict(feat).Score : HeuristicScore(feat);
                     }
                     catch
                     {
-                        // fallback heuristic if prediction fails
-                        score = HeuristicScore(featureInstance);
+                        score = HeuristicScore(feat);
                     }
-                }
-                else
-                {
-                    score = HeuristicScore(featureInstance);
-                }
 
-                scored.Add((obraFeat.IdObra, score));
-            });
+                    scored.Add((obra.IdObra, score));
+                });
 
-            // take top N
-            var top = scored
-                .OrderByDescending(t => t.Score)
+            // 6) PEGAR TOP N
+            var topIds = scored
+                .OrderByDescending(x => x.Score)
                 .Take(quantidade)
-                .Select(t => t.IdObra)
+                .Select(x => x.IdObra)
                 .ToList();
 
-            // prepare DTO results by fetching minimal metadata for chosen ids
-            var topMeta = await _db.Obras
-                .Where(o => top.Contains(o.IdObra))
+            // 7) CARREGAR METADADOS
+            var top = await _db.Obras
+                .Where(o => topIds.Contains(o.IdObra))
                 .Select(o => new ObraDTO
                 {
                     IdObra = o.IdObra,
@@ -314,16 +529,14 @@ using Revisu.Domain.Entities;
                     Tipo = o.Tipo,
                     Generos = o.Generos.Select(g => g.Nome).ToList()
                 })
-                .AsNoTracking()
                 .ToListAsync(cancellationToken);
 
-            // preserve order (top list ordering)
-            var ordered = top.Select(id => topMeta.First(m => m.IdObra == id)).ToList();
+            // manter ordem
+            return topIds.Select(id => top.First(t => t.IdObra == id)).ToList();
+    }
 
-            return ordered;
-        }
 
-        private float HeuristicScore(ObraFeature f)
+    private float HeuristicScore(ObraFeature f)
         {
             // fall back simple weighted score
             // weights adjustable: give genre & elenco higher weight

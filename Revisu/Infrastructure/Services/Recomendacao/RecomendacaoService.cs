@@ -11,17 +11,19 @@ namespace Revisu.Recommendation
     {
         private readonly AppDbContext _db;
         private readonly GlobalRecommendationCache _cache;
+        private readonly IServiceProvider _serviceProvider;
 
         private readonly string ContentIndexPath = Path.Combine("App_Data", "content_index.json");
         private readonly string CfModelPath = Path.Combine("App_Data", "cf_model.zip");
         private readonly String RerankerPath = Path.Combine("App_Data", "reranker.zip");
 
-        public RecomendacaoService(AppDbContext db, GlobalRecommendationCache cache)
+        public RecomendacaoService(AppDbContext db, GlobalRecommendationCache cache, IServiceProvider serviceProvider)
         {
             _db = db;
             _cache = cache;
 
             Directory.CreateDirectory("App_Data");
+            _serviceProvider = serviceProvider;
         }
 
         // -------------------------------------------------------------------
@@ -100,7 +102,10 @@ namespace Revisu.Recommendation
 
             var model = pipeline.Fit(data);
 
-            ml.Model.Save(model, data.Schema, File.Create(CfModelPath));
+            using (var fs = new FileStream(CfModelPath, FileMode.Create, FileAccess.Write))
+            {
+                ml.Model.Save(model, data.Schema, fs);
+            }
 
             _cache.CollaborativeModel = model;
             _cache.CollaborativeSchema = data.Schema;
@@ -114,7 +119,7 @@ namespace Revisu.Recommendation
         public async Task TrainRerankerAsync()
         {
             var ml = _cache.ML;
-            await EnsureCacheLoadedAsync();
+            //await EnsureCacheLoadedAsync();
 
             var users = await _db.Biblioteca
                 .Where(x => !x.Excluido)
@@ -122,7 +127,7 @@ namespace Revisu.Recommendation
                 .Distinct()
                 .ToListAsync();
 
-            var allObras = await _db.Obras.AsNoTracking().ToListAsync();
+            var allObras = await _db.Obras.Where(o => o.NotaMedia > 0 && !string.IsNullOrWhiteSpace(o.Sinopse)).AsNoTracking().ToListAsync();
             var training = new List<RerankRecord>();
 
             foreach (var user in users)
@@ -138,7 +143,7 @@ namespace Revisu.Recommendation
                 // Exemplo positivo
                 foreach (var obra in pos)
                 {
-                    var row = await BuildRow(user.Value.ToString(), obra, true);
+                    var row = await BuildRow(_db, user.Value.ToString(), obra, true);
                     training.Add(row);
                 }
 
@@ -151,7 +156,7 @@ namespace Revisu.Recommendation
 
                 foreach (var obra in negCandidates)
                 {
-                    var row = await BuildRow(user.Value.ToString(), obra.IdObra, false);
+                    var row = await BuildRow(_db, user.Value.ToString(), obra.IdObra, false);
                     training.Add(row);
                 }
             }
@@ -172,7 +177,11 @@ namespace Revisu.Recommendation
 
             var model = pipeline.Fit(data);
 
-            ml.Model.Save(model, data.Schema, File.Create(RerankerPath));
+            using (var fs = new FileStream(RerankerPath, FileMode.Create, FileAccess.Write))
+            {
+                ml.Model.Save(model, data.Schema, fs);
+            }
+
 
             _cache.RerankerModel = model;
             _cache.RerankerSchema = data.Schema;
@@ -183,48 +192,51 @@ namespace Revisu.Recommendation
         // -------------------------------------------------------------------
         // 4) Recomendar para um usuário
         // -------------------------------------------------------------------
-        //public async Task<List<Obras>> RecomendarAsync(Guid idUsuario, int top = 10)
-        //{
-        //    await EnsureCacheLoadedAsync();
+        public async Task<List<Obras>> RecomendarAsync(Guid idUsuario, int top = 10)
+        {
+            await EnsureCacheLoadedAsync();
 
-        //    var cf = _cache.CfEngine;
-        //    var rerank = _cache.RerankEngine;
+            var cf = _cache.CfEngine;
+            var rerank = _cache.RerankEngine;
 
-        //    var watched = await _db.Biblioteca
-        //        .Where(x => x.IdUsuario == idUsuario && !x.Excluido && x.IdObra != null)
-        //        .Select(x => x.IdObra!.Value)
-        //        .ToListAsync();
+            var watched = await _db.Biblioteca
+                .Where(x => x.IdUsuario == idUsuario && !x.Excluido && x.IdObra != null)
+                .Select(x => x.IdObra!.Value)
+                .ToListAsync();
 
-        //    var all = await _db.Obras.AsNoTracking().ToListAsync();
+            var all = await _db.Obras.Where(o => o.NotaMedia > 0 && !string.IsNullOrWhiteSpace(o.Sinopse)).AsNoTracking().ToListAsync();
 
-        //    var candidates = all
-        //        .Where(o => !watched.Contains(o.IdObra))
-        //        .ToList();
+            var candidates = all
+                .Where(o => !watched.Contains(o.IdObra))
+                .ToList();
 
-        //    var scored = new ConcurrentBag<(Obras obra, float score)>();
+            var scored = new ConcurrentBag<(Obras obra, float score)>();
 
-        //    Parallel.ForEach(candidates, c =>
-        //    {
-        //        var row = BuildRow(idUsuario.ToString(), c.IdObra, 0).Result;
+            await Parallel.ForEachAsync(candidates, async (c, token) =>
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        //        float score =
-        //            rerank != null
-        //            ? rerank.Predict(row).Probability
-        //            : cf?.Predict(new InteractionRecord
-        //            {
-        //                UserId = idUsuario.ToString(),
-        //                ItemId = c.IdObra.ToString()
-        //            }).Score ?? 0;
+                var row = await BuildRow(db, idUsuario.ToString(), c.IdObra, false);
 
-        //        scored.Add((c, score));
-        //    });
+                float score = rerank != null
+                    ? rerank.Predict(row).Probability
+                    : cf?.Predict(new InteractionRecord
+                    {
+                        UserId = idUsuario.ToString(),
+                        ItemId = c.IdObra.ToString()
+                    }).Score ?? 0;
 
-        //    return scored
-        //        .OrderByDescending(x => x.score)
-        //        .Take(top)
-        //        .Select(x => x.obra)
-        //        .ToList();
-        //}
+                scored.Add((c, score));
+            });
+
+
+            return scored
+                .OrderByDescending(x => x.score)
+                .Take(top)
+                .Select(x => x.obra)
+                .ToList();
+        }
 
         // -------------------------------------------------------------------
         // Helpers
@@ -257,19 +269,19 @@ namespace Revisu.Recommendation
             }
         }
 
-        private async Task<RerankRecord> BuildRow(string user, Guid obraId, bool label)
+        private async Task<RerankRecord> BuildRow(AppDbContext db, string user, Guid obraId, bool label)
         {
-            var obra = await _db.Obras
+            var obra = await db.Obras
                 .Include(o => o.Generos)
                 .Include(o => o.Elenco)
                 .FirstAsync(o => o.IdObra == obraId);
 
-            var userGenres = await _db.Biblioteca
+            var userGenres = await db.Biblioteca
                 .Where(x => x.IdUsuario!.ToString() == user && x.IdObra != null)
                 .SelectMany(x => x.Filmes.Generos.Select(g => g.IdGenero))
                 .ToListAsync();
 
-            var userElenco = await _db.Biblioteca
+            var userElenco = await db.Biblioteca
                 .Where(x => x.IdUsuario!.ToString() == user && x.IdObra != null)
                 .SelectMany(x => x.Filmes.Elenco.Select(e => e.IdElenco))
                 .ToListAsync();
@@ -283,13 +295,14 @@ namespace Revisu.Recommendation
             float sinopseSim = 0f;
             if (_cache.ContentVectors.TryGetValue(obraId, out var vec))
             {
-                var watched = await _db.Biblioteca
+                var watched = await db.Biblioteca
                     .Where(x => x.IdUsuario!.ToString() == user && x.IdObra != null)
                     .Select(x => x.IdObra!.Value)
                     .ToListAsync();
 
                 float sum = 0;
                 int count = 0;
+
                 foreach (var w in watched)
                 {
                     if (_cache.ContentVectors.TryGetValue(w, out var other))
@@ -298,24 +311,46 @@ namespace Revisu.Recommendation
                         count++;
                     }
                 }
+
                 if (count > 0)
                     sinopseSim = sum / count;
             }
 
-            if (float.IsNaN(sinopseSim))
+            // Sanitização geral de features
+            if (float.IsNaN(cfScore) || float.IsInfinity(cfScore))
+                cfScore = 0;
+
+            if (float.IsNaN(sinopseSim) || float.IsInfinity(sinopseSim))
                 sinopseSim = 0;
+
+            float genresSim = Jaccard(obra.Generos.Select(g => g.IdGenero), userGenres);
+            if (float.IsNaN(genresSim) || float.IsInfinity(genresSim))
+                genresSim = 0;
+
+            float elencoSim = Jaccard(obra.Elenco.Select(e => e.IdElenco), userElenco);
+            if (float.IsNaN(elencoSim) || float.IsInfinity(elencoSim))
+                elencoSim = 0;
+
+            float nota = obra.NotaMedia;
+            if (float.IsNaN(nota) || float.IsInfinity(nota))
+                nota = 0;
+
+            float pop = obra.Populariedade ?? 0;
+            if (float.IsNaN(pop) || float.IsInfinity(pop))
+                pop = 0;
+
 
             return new RerankRecord
             {
                 User = user,
                 Item = obraId.ToString(),
-                Label = label,    // Agora bool
+                Label = label,
                 CfScore = cfScore,
                 SinopseSim = sinopseSim,
-                GenresSim = Jaccard(obra.Generos.Select(g => g.IdGenero), userGenres),
-                ElencoSim = Jaccard(obra.Elenco.Select(e => e.IdElenco), userElenco),
-                Nota = obra.NotaMedia,
-                Pop = obra.Populariedade ?? 0
+                GenresSim = genresSim,
+                ElencoSim = elencoSim,
+                Nota = nota,
+                Pop = pop
             };
         }
 
