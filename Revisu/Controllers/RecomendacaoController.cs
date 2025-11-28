@@ -125,13 +125,13 @@ namespace Revisu.Controllers
         }
 
 
-        [HttpGet("50-obras")]
+        [HttpGet("100-obras")]
         public async Task<ActionResult<IEnumerable<ObraDTO>>> Get50Obras()
         {
             var obras = await _db.Obras
                 .Where(o => !string.IsNullOrWhiteSpace(o.Sinopse) && o.NotaMedia > 0)
                 .OrderByDescending(o => o.Populariedade)
-                .Take(50)
+                .Take(100)
                 .Select(o => new ObraDTO
                 {
                     IdObra = o.IdObra,
@@ -148,14 +148,14 @@ namespace Revisu.Controllers
         }
 
 
-        // ------------------------- 2) 50 ATORES -------------------------
-        [HttpGet("50-atores")]
+        // ------------------------- 2) 100 ATORES -------------------------
+        [HttpGet("100-atores")]
         public async Task<ActionResult<IEnumerable<AtorDTO>>> Get50Atores()
         {
             var atores = await _db.Elencos
                 .Where(e => e.Cargo == "Ator")
                 .OrderBy(e => Guid.NewGuid())
-                .Take(50)
+                .Take(100)
                 .Select(e => new AtorDTO
                 {
                     IdElenco = e.IdElenco,
@@ -176,14 +176,14 @@ namespace Revisu.Controllers
         }
 
 
-        // ------------------------- 3) 50 DIRETORES -------------------------
-        [HttpGet("50-diretores")]
+        // ------------------------- 3) 100 DIRETORES -------------------------
+        [HttpGet("100-diretores")]
         public async Task<ActionResult<IEnumerable<DiretorDTO>>> Get50Diretores()
         {
             var diretores = await _db.Elencos
                 .Where(e => e.Cargo == "Diretor")
                 .OrderBy(e => Guid.NewGuid())
-                .Take(50)
+                .Take(100)
                 .Select(e => new DiretorDTO
                 {
                     IdElenco = e.IdElenco,
