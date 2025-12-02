@@ -17,7 +17,7 @@ public class PesquisarService
 
         var resultado = new PesquisaResultadoDto();
 
-        // 🔹 Pesquisar Obras
+        //  Pesquisar Obras
         resultado.Obras = await _db.Obras
             .Where(o =>
                 !string.IsNullOrWhiteSpace(o.Sinopse) &&
@@ -32,7 +32,7 @@ public class PesquisarService
             .Take(5)
             .ToListAsync();
 
-        // 🔹 Pesquisar Atores
+        //  Pesquisar Atores
         resultado.Atores = await _db.Elencos
             .Where(e =>
                 e.Cargo == "Ator" &&
@@ -46,7 +46,7 @@ public class PesquisarService
             .Take(5)
             .ToListAsync();
 
-        //  Pesquisar Diretores
+        // Pesquisar Diretores
         resultado.Diretores = await _db.Elencos
             .Where(e =>
                 e.Cargo == "Diretor" &&

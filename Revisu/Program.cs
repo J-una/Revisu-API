@@ -50,6 +50,7 @@ builder.Services.AddScoped<RecomendacaoService>();
 builder.Services.AddScoped<RecomendacaoHybridService>();
 builder.Services.AddHttpClient<DetalhesService>();
 builder.Services.AddScoped<PesquisarService>();
+builder.Services.AddScoped<PopularService>();
 //builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("tmdb", (sp, client) =>
 {

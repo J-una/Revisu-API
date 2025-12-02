@@ -19,6 +19,7 @@ namespace Revisu.Controllers
         private readonly AppDbContext _db;
         private readonly DetalhesService _detalhesService;
         private readonly PesquisarService _pesquisarService;
+        private readonly PopularService _popularService;
 
         public RecomendacaoController(
             //RecomendacaoHibridaService recomendacaoService,
@@ -26,7 +27,8 @@ namespace Revisu.Controllers
             BibliotecaService bibliotecaService,
             AppDbContext db,
             DetalhesService sobrePessoasService,
-            PesquisarService pesquisarService)
+            PesquisarService pesquisarService,
+            PopularService popularService)
         {
             //_recomendacaoService = recomendacaoService;
             _quizService = listarQuizService;
@@ -34,6 +36,7 @@ namespace Revisu.Controllers
             _db = db;
             _detalhesService = sobrePessoasService;
             _pesquisarService = pesquisarService;
+            _popularService = popularService;
         }
 
 
@@ -241,5 +244,11 @@ namespace Revisu.Controllers
             return Ok(resultado);
         }
 
+        [HttpGet("listar-populares")]
+        public async Task<IActionResult> GetPopulares(Guid? idUsuario)
+        {
+            var obras = await _popularService.ObterPopularesAsync(idUsuario);
+            return Ok(obras);
+        }
     }
 }
