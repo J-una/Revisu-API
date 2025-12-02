@@ -17,17 +17,23 @@ namespace Revisu.Controllers
         private readonly QuizService _quizService;
         private readonly BibliotecaService _bibliotecaService;
         private readonly AppDbContext _db;
+        private readonly DetalhesService _detalhesService;
+        private readonly PesquisarService _pesquisarService;
 
         public RecomendacaoController(
             //RecomendacaoHibridaService recomendacaoService,
             QuizService listarQuizService,
             BibliotecaService bibliotecaService,
-            AppDbContext db)
+            AppDbContext db,
+            DetalhesService sobrePessoasService,
+            PesquisarService pesquisarService)
         {
             //_recomendacaoService = recomendacaoService;
             _quizService = listarQuizService;
             _bibliotecaService = bibliotecaService;
             _db = db;
+            _detalhesService = sobrePessoasService;
+            _pesquisarService = pesquisarService;
         }
 
 
@@ -201,42 +207,10 @@ namespace Revisu.Controllers
             return Ok(diretores);
         }
 
-        [HttpGet("detalhes-obras/{idObra:guid}")]
-        public async Task<ActionResult<DetalhesObraDTO>> GetObraById(Guid idObra)
+        [HttpGet("detalhes-obras/{idObra:guid}/{idUsuario:guid}")]
+        public async Task<ActionResult<DetalhesObraDTO>> GetObraById(Guid idObra, Guid idUsuario)
         {
-            var obra = await _db.Obras
-                .Where(o => o.IdObra == idObra)
-                .Select(o => new DetalhesObraDTO
-                {
-                    IdObra = o.IdObra,
-                    IdTmdb = o.IdTmdb,
-                    Titulo = o.Nome,
-                    Sinopse = o.Sinopse,
-                    Imagem = o.Imagem,
-                    NotaMedia = o.NotaMedia,
-                    Tipo = o.Tipo,
-                    Generos = o.Generos.Select(g => g.Nome).ToList(),
-
-                    // Atores / Diretores
-                    Atores = o.Elenco.Select(e => new AtorDTO
-                    {
-                        IdElenco = e.IdElenco,
-                        IdTmdb = e.IdTmdb,
-                        Nome = e.Nome,
-                        Foto = e.Foto,
-                        Cargo = e.Cargo,
-                        Sexo = e.Sexo,
-
-                        // Gêneros de todas as obras que esse ator participou
-                        Generos = e.Obras
-                            .SelectMany(ob => ob.Generos)
-                            .Select(g => g.Nome)
-                            .Distinct()
-                            .ToList()
-
-                    }).ToList()
-                })
-                .FirstOrDefaultAsync();
+            var obra = await _detalhesService.ObterDetalhesObraAsync(idObra, idUsuario);
 
             if (obra == null)
                 return NotFound(new { message = "Obra não encontrada." });
@@ -244,6 +218,28 @@ namespace Revisu.Controllers
             return Ok(obra);
         }
 
+
+        [HttpGet("pessoa/{idElenco:guid}/{idUsuario:guid}")]
+        public async Task<IActionResult> ObterPessoa(Guid idElenco, Guid idUsuario)
+        {
+            var dados = await _detalhesService.ObterDetalhesPessoaAsync(idElenco, idUsuario);
+
+            if (dados == null)
+                return NotFound("Pessoa não encontrada no TMDB ou no banco");
+
+            return Ok(dados);
+        }
+
+        [HttpGet("pesquisar")]
+        public async Task<IActionResult> Pesquisar([FromQuery] string termo)
+        {
+            if (string.IsNullOrWhiteSpace(termo))
+                return BadRequest("Informe um termo para pesquisa.");
+
+            var resultado = await _pesquisarService.PesquisarAsync(termo);
+
+            return Ok(resultado);
+        }
 
     }
 }

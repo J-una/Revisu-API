@@ -8,9 +8,10 @@
         public string? Foto { get; set; }
         public string Cargo { get; set; }
         public string? Sexo { get; set; }
-
+        public bool Marcado { get; set; }
         // Gêneros das obras em que ele participou
         public List<string> Generos { get; set; } = new();
+        
     }
 
     public class DiretorDTO
@@ -21,6 +22,7 @@
         public string? Foto { get; set; }
         public string Cargo { get; set; }
         public string? Sexo { get; set; }
+        public bool Marcado { get; set; }
 
         // Obras em que ele participou
         public List<string> Obras { get; set; } = new();

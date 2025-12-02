@@ -22,6 +22,7 @@ namespace Revisu.Recommendation
         private readonly MLContext _ml;
         private readonly string _cachePath = Path.Combine("App_Data", "obra_features_cache.json");
         private readonly string _cfModelPath = Path.Combine("App_Data", "cf_model.zip");
+        private Dictionary<Guid, string> _cacheElencoCargo = new();
 
         // in-memory runtime
         private ConcurrentDictionary<Guid, ObraFeatureCached> _cache = new();
@@ -158,12 +159,19 @@ namespace Revisu.Recommendation
         // ensure disk model/cache loaded into memory
         public async Task EnsureLoadedAsync()
         {
-            if ((_cache == null || _cache.Count == 0) && File.Exists(_cachePath))
+            if ((_cache == null || _cache.Count == 0) && File.Exists(_cachePath))   
             {
                 var list = JsonSerializer.Deserialize<List<ObraFeatureCached>>(await File.ReadAllTextAsync(_cachePath))
                            ?? new List<ObraFeatureCached>();
                 _cache = new ConcurrentDictionary<Guid, ObraFeatureCached>(list.ToDictionary(x => x.IdObra, x => x));
             }
+
+            if((_cacheElencoCargo == null || _cacheElencoCargo.Count == 0))
+            {
+                _cacheElencoCargo = _db.Elencos
+                    .ToDictionary(e => e.IdElenco, e => e.Cargo);
+            }
+            
 
             if (_cfModel == null && File.Exists(_cfModelPath))
             {
@@ -314,35 +322,223 @@ namespace Revisu.Recommendation
         //}
 
         //Versão com foco no genero
-        public async Task<List<ObraDTO>> RecommendForUserAsync(
+        //public async Task<List<ObraDTO>> RecommendForUserAsync(
+        //    Guid userId,
+        //    int top = 10,
+        //    CancellationToken cancellationToken = default)
+        //{
+        //    await EnsureLoadedAsync();
+
+        //    // ---------------------------
+        //    // 1. Load user library
+        //    // ---------------------------
+        //    var userLibrary = await _db.Biblioteca
+        //        .Where(b => b.IdUsuario == userId && !b.Excluido)
+        //        .Select(b => new { b.IdObra, b.IdElenco })
+        //        .AsNoTracking()
+        //        .ToListAsync(cancellationToken);
+
+        //    var watchedIds = new HashSet<Guid>(userLibrary.Where(x => x.IdObra.HasValue)
+        //        .Select(x => x.IdObra!.Value));
+
+        //    var watchedElenco = new HashSet<Guid>(userLibrary.Where(x => x.IdElenco.HasValue)
+        //        .Select(x => x.IdElenco!.Value));
+
+        //    var watchedCached = _cache.Values.Where(c => watchedIds.Contains(c.IdObra)).ToList();
+
+        //    // genres + plot tokens
+        //    var userGenres = new HashSet<Guid>(watchedCached.SelectMany(c => c.Generos));
+        //    var userTokens = new HashSet<string>(watchedCached.SelectMany(c => c.SinopseTokens));
+
+        //    // quantidade de obras vistas → influência global
+        //    int nWatched = watchedIds.Count;
+        //    float viewingFactor = nWatched switch
+        //    {
+        //        0 => 0.3f,
+        //        <= 3 => 0.55f,
+        //        <= 8 => 0.75f,
+        //        <= 15 => 0.9f,
+        //        _ => 1f
+        //    };
+
+        //    // ---------------------------
+        //    // 2. Candidate pool
+        //    // ---------------------------
+        //    var candidates = _cache.Values.Where(c => !watchedIds.Contains(c.IdObra)).ToArray();
+        //    var scoredBag = new ConcurrentBag<(Guid id, float score)>();
+
+        //    // Thread‑local CF engine
+        //    ThreadLocal<PredictionEngine<InteractionRecord, CfPrediction>?> threadCfEngine =
+        //        new(() =>
+        //        {
+        //            lock (_modelLock)
+        //            {
+        //                if (_cfModel != null)
+        //                    return _ml.Model.CreatePredictionEngine<InteractionRecord, CfPrediction>(_cfModel);
+        //                return null;
+        //            }
+        //        });
+
+        //    // hybrid weights
+        //    const float W_CF = 0.55f;      // reforçado CF
+        //    const float W_CONTENT = 0.40f; // reforçado conteúdo
+        //    const float W_META = 0.05f;    // meta menos influente
+
+        //    // ---------------------------
+        //    // 3. Scoring loop (parallel)
+        //    // ---------------------------
+        //    Parallel.ForEach(
+        //        candidates,
+        //        new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
+        //        c =>
+        //        {
+        //            if (cancellationToken.IsCancellationRequested) return;
+
+        //            // -----------------------------------------------------
+        //            // CONTENT — Gênero agora com PESO QUADRÁTICO + viewingFactor
+        //            // -----------------------------------------------------
+        //            float genreSim = 0f;
+        //            if (userGenres.Count > 0 && c.Generos.Length > 0)
+        //            {
+        //                var intersection = c.Generos.Count(g => userGenres.Contains(g));
+        //                var union = userGenres.Count + c.Generos.Length;
+
+        //                float jaccard = union == 0 ? 0f : (float)intersection / union;
+
+        //                // Quadratic boost — se bater 4 ou 5 gêneros = explode
+        //                genreSim = jaccard * jaccard;
+
+        //                // Dependendo de quantos filmes o usuário viu, aumente ainda mais
+        //                genreSim *= (0.5f + 0.5f * viewingFactor);
+        //            }
+
+        //            // ator/atriz/diretor
+        //            float elencoSim = 0f;
+        //            if (watchedElenco.Count > 0 && c.ElencoIds.Length > 0)
+        //            {
+        //                var inter = c.ElencoIds.Count(e => watchedElenco.Contains(e));
+        //                elencoSim = watchedElenco.Count == 0 ? 0f : (float)inter / watchedElenco.Count;
+        //            }
+
+        //            // tokens da sinopse
+        //            float sinopseSim = 0f;
+        //            if (userTokens.Count > 0 && c.SinopseTokens.Length > 0)
+        //            {
+        //                var inter = c.SinopseTokens.Count(t => userTokens.Contains(t));
+        //                var union = userTokens.Count + c.SinopseTokens.Length;
+        //                sinopseSim = union == 0 ? 0f : (float)inter / union;
+        //            }
+
+        //            // Score de conteúdo normalizado
+        //            float contentScore =
+        //                0.70f * genreSim +
+        //                0.20f * elencoSim +
+        //                0.10f * sinopseSim;
+
+        //            // -----------------------------------------------------
+        //            // META
+        //            // -----------------------------------------------------
+        //            float metaScore =
+        //                (c.NotaMedia / 10f) * 0.7f +
+        //                (c.Popularidade / 100f) * 0.3f;
+
+        //            // -----------------------------------------------------
+        //            // CF (collaborative)
+        //            // -----------------------------------------------------
+        //            float cfScoreRaw = 0f;
+        //            var cfEngine = threadCfEngine.Value;
+        //            if (cfEngine != null)
+        //            {
+        //                try
+        //                {
+        //                    cfScoreRaw = cfEngine.Predict(new InteractionRecord
+        //                    {
+        //                        UserId = userId.ToString(),
+        //                        ItemId = c.IdObra.ToString()
+        //                    }).Score;
+        //                }
+        //                catch
+        //                {
+        //                    cfScoreRaw = 0f;
+        //                }
+        //            }
+
+        //            // sigmoid
+        //            float cfScore = 1f / (1 + (float)Math.Exp(-cfScoreRaw));
+
+        //            // -----------------------------------------------------
+        //            // FINAL HYBRID SCORE
+        //            // -----------------------------------------------------
+        //            float finalScore =
+        //                W_CF * cfScore +
+        //                W_CONTENT * contentScore +
+        //                W_META * metaScore;
+
+        //            scoredBag.Add((c.IdObra, finalScore));
+        //        });
+
+        //    // ---------------------------
+        //    // 4. Top results
+        //    // ---------------------------
+        //    var topIds = scoredBag
+        //        .OrderByDescending(x => x.score)
+        //        .Take(top)
+        //        .Select(x => x.id)
+        //        .ToList();
+
+        //    // fetch metadata
+        //    var topMeta = await _db.Obras
+        //        .Where(o => topIds.Contains(o.IdObra))
+        //        .Include(o => o.Generos)
+        //        .AsNoTracking()
+        //        .ToListAsync(cancellationToken);
+
+        //    var ordered = topIds.Select(id => topMeta.First(o => o.IdObra == id)).ToList();
+
+        //    threadCfEngine.Dispose();
+
+        //    return ordered.Select(o => new ObraDTO
+        //    {
+        //        IdObra = o.IdObra,
+        //        IdTmdb = o.IdTmdb,
+        //        Titulo = o.Nome,
+        //        Imagem = o.Imagem,
+        //        NotaMedia = o.NotaMedia,
+        //        Tipo = o.Tipo,
+        //        Generos = o.Generos.Select(g => g.Nome).ToList()
+        //    }).ToList();
+        //}
+
+        public async Task<RecommendationBundleDTO> RecommendForUserAsync(
             Guid userId,
-            int top = 10,
+            int top,
             CancellationToken cancellationToken = default)
         {
             await EnsureLoadedAsync();
 
-            // ---------------------------
-            // 1. Load user library
-            // ---------------------------
+            // ----------------------------------------------------
+            // 1. Biblioteca do usuário
+            // ----------------------------------------------------
             var userLibrary = await _db.Biblioteca
                 .Where(b => b.IdUsuario == userId && !b.Excluido)
                 .Select(b => new { b.IdObra, b.IdElenco })
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
 
-            var watchedIds = new HashSet<Guid>(userLibrary.Where(x => x.IdObra.HasValue)
+
+            var watchedIds = new HashSet<Guid>(userLibrary
+                .Where(x => x.IdObra.HasValue)
                 .Select(x => x.IdObra!.Value));
 
-            var watchedElenco = new HashSet<Guid>(userLibrary.Where(x => x.IdElenco.HasValue)
+            var watchedElenco = new HashSet<Guid>(userLibrary
+                .Where(x => x.IdElenco.HasValue)
                 .Select(x => x.IdElenco!.Value));
 
             var watchedCached = _cache.Values.Where(c => watchedIds.Contains(c.IdObra)).ToList();
 
-            // genres + plot tokens
             var userGenres = new HashSet<Guid>(watchedCached.SelectMany(c => c.Generos));
             var userTokens = new HashSet<string>(watchedCached.SelectMany(c => c.SinopseTokens));
 
-            // quantidade de obras vistas → influência global
             int nWatched = watchedIds.Count;
             float viewingFactor = nWatched switch
             {
@@ -353,13 +549,13 @@ namespace Revisu.Recommendation
                 _ => 1f
             };
 
-            // ---------------------------
-            // 2. Candidate pool
-            // ---------------------------
+            // ----------------------------------------------------
+            // 2. Obras candidatas
+            // ----------------------------------------------------
             var candidates = _cache.Values.Where(c => !watchedIds.Contains(c.IdObra)).ToArray();
+
             var scoredBag = new ConcurrentBag<(Guid id, float score)>();
 
-            // Thread‑local CF engine
             ThreadLocal<PredictionEngine<InteractionRecord, CfPrediction>?> threadCfEngine =
                 new(() =>
                 {
@@ -367,44 +563,28 @@ namespace Revisu.Recommendation
                     {
                         if (_cfModel != null)
                             return _ml.Model.CreatePredictionEngine<InteractionRecord, CfPrediction>(_cfModel);
+
                         return null;
                     }
                 });
 
-            // hybrid weights
-            const float W_CF = 0.55f;      // reforçado CF
-            const float W_CONTENT = 0.40f; // reforçado conteúdo
-            const float W_META = 0.05f;    // meta menos influente
-
-            // ---------------------------
-            // 3. Scoring loop (parallel)
-            // ---------------------------
             Parallel.ForEach(
                 candidates,
                 new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
                 c =>
                 {
-                    if (cancellationToken.IsCancellationRequested) return;
+                    if (cancellationToken.IsCancellationRequested)
+                        return;
 
-                    // -----------------------------------------------------
-                    // CONTENT — Gênero agora com PESO QUADRÁTICO + viewingFactor
-                    // -----------------------------------------------------
                     float genreSim = 0f;
                     if (userGenres.Count > 0 && c.Generos.Length > 0)
                     {
                         var intersection = c.Generos.Count(g => userGenres.Contains(g));
                         var union = userGenres.Count + c.Generos.Length;
-
-                        float jaccard = union == 0 ? 0f : (float)intersection / union;
-
-                        // Quadratic boost — se bater 4 ou 5 gêneros = explode
-                        genreSim = jaccard * jaccard;
-
-                        // Dependendo de quantos filmes o usuário viu, aumente ainda mais
+                        genreSim = union == 0 ? 0f : (float)intersection / union;
                         genreSim *= (0.5f + 0.5f * viewingFactor);
                     }
 
-                    // ator/atriz/diretor
                     float elencoSim = 0f;
                     if (watchedElenco.Count > 0 && c.ElencoIds.Length > 0)
                     {
@@ -412,7 +592,6 @@ namespace Revisu.Recommendation
                         elencoSim = watchedElenco.Count == 0 ? 0f : (float)inter / watchedElenco.Count;
                     }
 
-                    // tokens da sinopse
                     float sinopseSim = 0f;
                     if (userTokens.Count > 0 && c.SinopseTokens.Length > 0)
                     {
@@ -421,23 +600,17 @@ namespace Revisu.Recommendation
                         sinopseSim = union == 0 ? 0f : (float)inter / union;
                     }
 
-                    // Score de conteúdo normalizado
                     float contentScore =
                         0.70f * genreSim +
                         0.20f * elencoSim +
                         0.10f * sinopseSim;
 
-                    // -----------------------------------------------------
-                    // META
-                    // -----------------------------------------------------
                     float metaScore =
                         (c.NotaMedia / 10f) * 0.7f +
                         (c.Popularidade / 100f) * 0.3f;
 
-                    // -----------------------------------------------------
-                    // CF (collaborative)
-                    // -----------------------------------------------------
                     float cfScoreRaw = 0f;
+
                     var cfEngine = threadCfEngine.Value;
                     if (cfEngine != null)
                     {
@@ -449,47 +622,36 @@ namespace Revisu.Recommendation
                                 ItemId = c.IdObra.ToString()
                             }).Score;
                         }
-                        catch
-                        {
-                            cfScoreRaw = 0f;
-                        }
+                        catch { }
                     }
 
-                    // sigmoid
                     float cfScore = 1f / (1 + (float)Math.Exp(-cfScoreRaw));
 
-                    // -----------------------------------------------------
-                    // FINAL HYBRID SCORE
-                    // -----------------------------------------------------
                     float finalScore =
-                        W_CF * cfScore +
-                        W_CONTENT * contentScore +
-                        W_META * metaScore;
+                        0.55f * cfScore +
+                        0.40f * contentScore +
+                        0.05f * metaScore;
 
                     scoredBag.Add((c.IdObra, finalScore));
                 });
 
-            // ---------------------------
-            // 4. Top results
-            // ---------------------------
+            // ----------------------------------------------------
+            // 3. Top obras recomendadas
+            // ----------------------------------------------------
             var topIds = scoredBag
                 .OrderByDescending(x => x.score)
                 .Take(top)
                 .Select(x => x.id)
                 .ToList();
 
-            // fetch metadata
             var topMeta = await _db.Obras
                 .Where(o => topIds.Contains(o.IdObra))
                 .Include(o => o.Generos)
+                .Include(o => o.Elenco)
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
 
-            var ordered = topIds.Select(id => topMeta.First(o => o.IdObra == id)).ToList();
-
-            threadCfEngine.Dispose();
-
-            return ordered.Select(o => new ObraDTO
+            var obrasDTO = topMeta.Select(o => new ObraDTO
             {
                 IdObra = o.IdObra,
                 IdTmdb = o.IdTmdb,
@@ -497,16 +659,176 @@ namespace Revisu.Recommendation
                 Imagem = o.Imagem,
                 NotaMedia = o.NotaMedia,
                 Tipo = o.Tipo,
-                Generos = o.Generos.Select(g => g.Nome).ToList()
+                Generos = o.Generos.Select(g => g.Nome).ToList(),
+                Marcado = watchedIds.Contains(o.IdObra)
             }).ToList();
+
+            // =================================================================
+            // 4. RECOMENDAÇÃO DE ATORES E DIRETORES (Garantir não vazios)
+            // =================================================================
+
+            bool userHasActors = watchedElenco.Any();
+
+            var baseElenco = userHasActors
+                ? watchedElenco
+                : watchedCached.SelectMany(o => o.ElencoIds).ToHashSet();
+
+            // Frequência
+            var freq = new Dictionary<Guid, int>();
+            foreach (var obra in watchedCached)
+            {
+                foreach (var membro in obra.ElencoIds)
+                {
+                    if (!freq.ContainsKey(membro))
+                        freq[membro] = 0;
+
+                    freq[membro] += baseElenco.Contains(membro) ? 1 : 3;
+                }
+            }
+
+            var freqKeys = freq.Keys.ToHashSet();
+
+            var elencoCandidatos = await _db.Elencos
+                .Where(e => freqKeys.Contains(e.IdElenco))
+                .Include(e => e.Obras)
+                    .ThenInclude(o => o.Generos)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var scoredElenco = elencoCandidatos
+                .Select(e =>
+                {
+                    float cooc = freq[e.IdElenco];
+
+                    var generosElenco = e.Obras
+                        .SelectMany(o => o.Generos.Select(g => g.IdGenero))
+                        .ToHashSet();
+
+                    float genreSim = 0;
+                    if (generosElenco.Any())
+                    {
+                        var inter = generosElenco.Count(g => userGenres.Contains(g));
+                        var union = generosElenco.Count + userGenres.Count;
+                        genreSim = union == 0 ? 0 : (float)inter / union;
+                    }
+
+                    float score = 0.6f * cooc + 0.3f * genreSim + 0.1f * e.Popularidade;
+
+                    return (e, score);
+                })
+                .OrderByDescending(x => x.score)
+                .Take(top)
+                .ToList();
+
+            // ----------------------------------------------------
+            // 5. Montagem DTO
+            // ----------------------------------------------------
+            var atoresDTO = scoredElenco
+                .Where(x => x.e.Cargo == "Ator")
+                .Select(x => new AtorDTO
+                {
+                    IdElenco = x.e.IdElenco,
+                    IdTmdb = x.e.IdTmdb,
+                    Nome = x.e.Nome,
+                    Foto = x.e.Foto,
+                    Cargo = x.e.Cargo,
+                    Sexo = x.e.Sexo,
+                    Generos = x.e.Obras
+                        .SelectMany(o => o.Generos.Select(g => g.Nome))
+                        .Distinct()
+                        .ToList(),
+                    Marcado = watchedElenco.Contains(x.e.IdElenco)
+                })
+                .ToList();
+
+            var diretoresDTO = scoredElenco
+                .Where(x => x.e.Cargo == "Diretor")
+                .Select(x => new DiretorDTO
+                {
+                    IdElenco = x.e.IdElenco,
+                    IdTmdb = x.e.IdTmdb,
+                    Nome = x.e.Nome,
+                    Foto = x.e.Foto,
+                    Cargo = x.e.Cargo,
+                    Sexo = x.e.Sexo,
+                    Obras = x.e.Obras.Select(o => o.Nome).Distinct().ToList(),
+                    Marcado = watchedElenco.Contains(x.e.IdElenco)
+                })
+                .ToList();
+
+            // ----------------------------------------------------
+            // 6. GARANTIR QUE NÃO VENHAM LISTAS VAZIAS
+            // ----------------------------------------------------
+            if (atoresDTO.Count == 0)
+            {
+                atoresDTO = await _db.Elencos
+                    .Where(e => e.Cargo == "Ator")
+                    .OrderByDescending(e => e.Popularidade)
+                    .Take(top)
+                    .Select(e => new AtorDTO
+                    {
+                        IdElenco = e.IdElenco,
+                        IdTmdb = e.IdTmdb,
+                        Nome = e.Nome,
+                        Foto = e.Foto,
+                        Cargo = e.Cargo,
+                        Sexo = e.Sexo,
+                        Generos = e.Obras.SelectMany(o => o.Generos.Select(g => g.Nome)).Distinct().ToList()
+                    })
+                    .ToListAsync(cancellationToken);
+            }
+
+            if (diretoresDTO.Count == 0)
+            {
+                diretoresDTO = await _db.Elencos
+                    .Where(e => e.Cargo == "Diretor")
+                    .OrderByDescending(e => e.Popularidade)
+                    .Take(top)
+                    .Select(e => new DiretorDTO
+                    {
+                        IdElenco = e.IdElenco,
+                        IdTmdb = e.IdTmdb,
+                        Nome = e.Nome,
+                        Foto = e.Foto,
+                        Cargo = e.Cargo,
+                        Sexo = e.Sexo,
+                        Obras = e.Obras.Select(o => o.Nome).Distinct().ToList()
+                    })
+                    .ToListAsync(cancellationToken);
+            }
+
+            // ----------------------------------------------------
+            // 7. RETORNO FINAL
+            // ----------------------------------------------------
+            return new RecommendationBundleDTO
+            {
+                Obras = obrasDTO,
+                Atores = atoresDTO,
+                Diretores = diretoresDTO
+            };
         }
 
-        public async Task<List<ObraDTO>> RecommendSimilarToAsync(
+
+
+        public async Task<List<ObraDTO>> RecommendObrasSimilarToAsync(
             Guid obraId,
+            Guid idUsuario,
             int top = 10,
             CancellationToken cancellationToken = default)
         {
             await EnsureLoadedAsync();
+
+            // Adicionado: carregar biblioteca (necessário para marcar obras)
+            var userLibrary = await _db.Biblioteca
+                .Where(b => !b.Excluido && b.IdUsuario == idUsuario)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var watchedIds = userLibrary
+                .Where(x => x.IdObra.HasValue)
+                .Select(x => x.IdObra!.Value)
+                .ToHashSet();
+
 
             // 1. Recuperar obra base
             if (!_cache.TryGetValue(obraId, out var target))
@@ -528,23 +850,17 @@ namespace Revisu.Recommendation
                 new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
                 c =>
                 {
-                    // ------------------------
-                    // GÊNEROS — maior peso
-                    // ------------------------
+                    // Gêneros (peso forte)
                     float genreSim = 0;
                     if (c.Generos.Length > 0 && targetGenres.Count > 0)
                     {
                         var inter = c.Generos.Count(g => targetGenres.Contains(g));
                         var union = c.Generos.Length + targetGenres.Count;
                         float jaccard = union == 0 ? 0f : (float)inter / union;
-
-                        // Quadratic boost – muito importante para parecidos
                         genreSim = jaccard * jaccard;
                     }
 
-                    // ------------------------
-                    // SINOPSE — tokens parecidos
-                    // ------------------------
+                    // Sinopse
                     float sinopseSim = 0;
                     if (c.SinopseTokens.Length > 0 && targetTokens.Count > 0)
                     {
@@ -553,9 +869,7 @@ namespace Revisu.Recommendation
                         sinopseSim = union == 0 ? 0f : (float)inter / union;
                     }
 
-                    // ------------------------
-                    // ELENCO — opcional, peso pequeno
-                    // ------------------------
+                    // Elenco (peso menor)
                     float elencoSim = 0;
                     if (c.ElencoIds.Length > 0 && targetElenco.Count > 0)
                     {
@@ -563,33 +877,26 @@ namespace Revisu.Recommendation
                         elencoSim = (float)inter / Math.Max(1, targetElenco.Count);
                     }
 
-                    // ------------------------
-                    // META — ajuda a empurrar filmes relevantes
-                    // ------------------------
+                    // Meta score
                     float metaScore =
                         (c.NotaMedia / 10f) * 0.7f +
                         (c.Popularidade / 100f) * 0.3f;
 
-                    // ------------------------
-                    // PONDERAÇÃO FINAL – focada em filmes parecidos
-                    // ------------------------
                     float finalScore =
-                        0.70f * genreSim +      // MUITO forte
-                        0.20f * sinopseSim +    // importante
-                        0.05f * elencoSim +     // fraco
-                        0.05f * metaScore;      // bem fraco
+                        0.70f * genreSim +
+                        0.20f * sinopseSim +
+                        0.05f * elencoSim +
+                        0.05f * metaScore;
 
                     bag.Add((c.IdObra, finalScore));
                 });
 
-            // 3. Pegar top resultados
             var topIds = bag
                 .OrderByDescending(x => x.score)
                 .Take(top)
                 .Select(x => x.id)
                 .ToList();
 
-            // 4. Buscar detalhes no banco
             var obras = await _db.Obras
                 .Where(o => topIds.Contains(o.IdObra))
                 .Include(o => o.Generos)
@@ -598,7 +905,6 @@ namespace Revisu.Recommendation
 
             var ordered = topIds.Select(id => obras.First(o => o.IdObra == id));
 
-            // 5. DTO
             return ordered.Select(o => new ObraDTO
             {
                 IdObra = o.IdObra,
@@ -607,10 +913,171 @@ namespace Revisu.Recommendation
                 Imagem = o.Imagem,
                 NotaMedia = o.NotaMedia,
                 Tipo = o.Tipo,
-                Generos = o.Generos.Select(g => g.Nome).ToList()
+                Generos = o.Generos.Select(g => g.Nome).ToList(),
+                Marcado = watchedIds.Contains(o.IdObra) // 🔥 Corrigido
             }).ToList();
         }
 
+
+        public async Task<RecomendacaoElencoDTO> RecommendByElencoAsync(
+            Guid idElenco,
+            Guid idUsuario,
+            int top = 10,
+            CancellationToken cancellationToken = default)
+        {
+            await EnsureLoadedAsync();
+
+            var userLibrary = await _db.Biblioteca
+                .Where(b => !b.Excluido && b.IdUsuario == idUsuario)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var watchedIds = userLibrary
+                .Where(x => x.IdObra.HasValue)
+                .Select(x => x.IdObra!.Value)
+                .ToHashSet();
+
+            var watchedElenco = userLibrary
+                .Where(x => x.IdElenco.HasValue)
+                .Select(x => x.IdElenco!.Value)
+                .ToHashSet();
+
+
+            // 1. Buscar membro do elenco
+            var elencoBase = await _db.Elencos
+                .Where(e => e.IdElenco == idElenco)
+                .Select(e => new { e.IdElenco, e.Nome, e.Cargo })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (elencoBase == null)
+                throw new InvalidOperationException("Elenco não encontrado.");
+
+            string cargoBase = elencoBase.Cargo;
+
+            // 2. Obras do elenco
+            var obrasDoElenco = _cache.Values
+                .Where(o => o.ElencoIds.Contains(idElenco))
+                .Select(o => o.IdObra)
+                .ToHashSet();
+
+            // 3. Frequência de coocorrência
+            var freq = new Dictionary<Guid, int>();
+
+            foreach (var obraId in obrasDoElenco)
+            {
+                var obra = _cache[obraId];
+
+                foreach (var membro in obra.ElencoIds)
+                {
+                    if (membro == idElenco) continue;
+
+                    var membroCargo = _cacheElencoCargo[membro];
+
+                    if (membroCargo != cargoBase) continue;
+
+                    if (!freq.ContainsKey(membro))
+                        freq[membro] = 0;
+
+                    freq[membro]++;
+                }
+            }
+
+            var similaresIds = freq
+                .OrderByDescending(x => x.Value)
+                .Take(top)
+                .Select(x => x.Key)
+                .ToList();
+
+            List<AtorDTO> atoresDTO = new();
+            List<DiretorDTO> diretoresDTO = new();
+
+            if (cargoBase == "Ator")
+            {
+                atoresDTO = await _db.Elencos
+                    .Where(e => similaresIds.Contains(e.IdElenco) && e.Cargo == "Ator")
+                    .Select(e => new AtorDTO
+                    {
+                        IdElenco = e.IdElenco,
+                        IdTmdb = e.IdTmdb,
+                        Nome = e.Nome,
+                        Foto = e.Foto,
+                        Cargo = e.Cargo,
+                        Sexo = e.Sexo,
+                        Generos = e.Obras.SelectMany(o => o.Generos.Select(g => g.Nome)).Distinct().ToList(),
+                        Marcado = watchedElenco.Contains(e.IdElenco) // 🔥 Corrigido
+                    })
+                    .ToListAsync(cancellationToken);
+            }
+            else
+            {
+                diretoresDTO = await _db.Elencos
+                    .Where(e => similaresIds.Contains(e.IdElenco) && e.Cargo == "Diretor")
+                    .Select(e => new DiretorDTO
+                    {
+                        IdElenco = e.IdElenco,
+                        IdTmdb = e.IdTmdb,
+                        Nome = e.Nome,
+                        Foto = e.Foto,
+                        Cargo = e.Cargo,
+                        Sexo = e.Sexo,
+                        Obras = e.Obras.Select(o => o.Nome).Distinct().ToList(),
+                        Marcado = watchedElenco.Contains(e.IdElenco) // 🔥 Corrigido
+                    })
+                    .ToListAsync(cancellationToken);
+            }
+
+            // 6. Obras relacionadas
+            var obrasRelacionadasIds = _cache.Values
+                .Where(o => o.ElencoIds.Any(a => similaresIds.Contains(a)))
+                .OrderByDescending(o => o.NotaMedia)
+                .Take(top)
+                .Select(o => o.IdObra)
+                .ToList();
+
+            var obrasRelacionadas = await _db.Obras
+                .Where(o => obrasRelacionadasIds.Contains(o.IdObra))
+                .Include(o => o.Generos)
+                .Select(o => new ObraDTO
+                {
+                    IdObra = o.IdObra,
+                    IdTmdb = o.IdTmdb,
+                    Titulo = o.Nome,
+                    Imagem = o.Imagem,
+                    NotaMedia = o.NotaMedia,
+                    Tipo = o.Tipo,
+                    Generos = o.Generos.Select(g => g.Nome).ToList(),
+                    Marcado = watchedIds.Contains(o.IdObra) // 🔥 Corrigido
+                })
+                .ToListAsync(cancellationToken);
+
+            return new RecomendacaoElencoDTO
+            {
+                IdElenco = idElenco,
+                NomeElenco = elencoBase.Nome,
+                AtoresParecidos = atoresDTO,
+                DiretoresParecidos = diretoresDTO,
+                ObrasRelacionadas = obrasRelacionadas
+            };
+        }
+
+
+
+
+        public class RecomendacaoElencoDTO
+        {
+            public Guid IdElenco { get; set; }
+            public string NomeElenco { get; set; } = "";
+            public List<AtorDTO> AtoresParecidos { get; set; } = new();
+            public List<DiretorDTO> DiretoresParecidos { get; set; } = new();
+            public List<ObraDTO> ObrasRelacionadas { get; set; } = new();
+        }
+
+        public class RecommendationBundleDTO
+        {
+            public List<ObraDTO> Obras { get; set; } = new();
+            public List<AtorDTO> Atores { get; set; } = new();
+            public List<DiretorDTO> Diretores { get; set; } = new();
+        }
 
 
         // ---------------------------

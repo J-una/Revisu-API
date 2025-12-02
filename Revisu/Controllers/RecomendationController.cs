@@ -52,7 +52,7 @@ namespace Revisu.Controllers
 
         // GET api/recommendation/recommend/{userId}?top=10
         [HttpGet("recommend/{userId:guid}")]
-        public async Task<IActionResult> Recommend(Guid userId, [FromQuery] int top = 10, CancellationToken ct = default)
+        public async Task<IActionResult> Recommend(Guid userId, [FromQuery] int top = 100, CancellationToken ct = default)
         {
             try
             {
@@ -65,10 +65,17 @@ namespace Revisu.Controllers
             }
         }
 
-        [HttpGet("similar/{obraId}")]
-        public async Task<IActionResult> GetSimilar(Guid obraId, int top = 10)
+        [HttpGet("similar-obras/{obraId}/{idUsuario}")]
+        public async Task<IActionResult> GetSimilarObra(Guid obraId, Guid idUsuario, int top = 100)
         {
-            var result = await _service.RecommendSimilarToAsync(obraId, top);
+            var result = await _service.RecommendObrasSimilarToAsync(obraId, idUsuario, top);
+            return Ok(result);
+        }
+
+        [HttpGet("similar-elenco/{elencoId}/{idUsuario}")]
+        public async Task<IActionResult> GetSimilarElenco(Guid elencoId,Guid idUsuario, int top = 50)
+        {
+            var result = await _service.RecommendByElencoAsync(elencoId, idUsuario, top);
             return Ok(result);
         }
 

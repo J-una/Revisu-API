@@ -48,6 +48,8 @@ builder.Services.AddScoped<RecomendacaoHibridaService>();
 builder.Services.AddSingleton<GlobalRecommendationCache>();
 builder.Services.AddScoped<RecomendacaoService>();
 builder.Services.AddScoped<RecomendacaoHybridService>();
+builder.Services.AddHttpClient<DetalhesService>();
+builder.Services.AddScoped<PesquisarService>();
 //builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("tmdb", (sp, client) =>
 {

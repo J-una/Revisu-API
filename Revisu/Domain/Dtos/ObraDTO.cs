@@ -8,7 +8,9 @@
         public string Imagem { get; set; }
         public float NotaMedia { get; set; }
         public string Tipo { get; set; }
+        public bool Marcado { get; set; }
         public List<string> Generos { get; set; }
+        
     }
 
     public class DetalhesObraDTO
@@ -22,6 +24,7 @@
         public string Tipo { get; set; }
         public List<string> Generos { get; set; }
         public List<AtorDTO> Atores { get; set; }
+        public bool Marcado { get; set; }
     }
 
 }
