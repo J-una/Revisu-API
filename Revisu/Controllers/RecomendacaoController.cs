@@ -72,22 +72,33 @@ namespace Revisu.Controllers
         //    }
         //}
 
-        //Lista filmes aleatorios para gerar o quiz
-        [HttpGet("filmes-quiz")]
-        public async Task<IActionResult> QuizFilmes()
+        // Lista filmes aleatórios para gerar o quiz
+        [HttpPost("filmes-quiz")]
+        public async Task<IActionResult> QuizFilmes([FromBody] List<Guid>? idsJaUsados)
         {
-            var filmes = await _quizService.ListarFilmesRandomizadosAsync();
+            var filmes = await _quizService.ListarFilmesRandomizadosAsync(idsJaUsados);
             return Ok(filmes);
         }
 
-        //Lista series aleatorias para gerar o quiz
-        [HttpGet("series-quiz")]
-        public async Task<IActionResult> ListarSeries()
+        // Lista séries aleatórias para gerar o quiz
+        [HttpPost("series-quiz")]
+        public async Task<IActionResult> ListarSeries([FromBody] List<Guid>? idsJaUsados)
         {
-            var series = await _quizService.ListarSeriesRandomizadasAsync();
+            var series = await _quizService.ListarSeriesRandomizadasAsync(idsJaUsados);
             return Ok(series);
         }
 
+        //Salva os dados do quiz 
+        [HttpPost("quiz/salvar")]
+        public async Task<IActionResult> SalvarQuiz([FromBody] SalvarQuizDTO dto)
+        {
+            if (dto == null)
+                return BadRequest("Dados inválidos.");
+
+            await _quizService.SalvarObrasDoQuizAsync(dto.IdUsuario, dto.IdObras);
+
+            return Ok("Quiz salvo com sucesso. Obras adicionadas à biblioteca.");
+        }
 
 
         //Salvar item na biblioteca
@@ -106,6 +117,13 @@ namespace Revisu.Controllers
             await _bibliotecaService.RemoverAsync(dto.IdUsuario, dto.IdObra, dto.IdElenco);
 
             return Ok("Item removido da biblioteca!");
+        }
+
+        [HttpGet("listar-biblioteca/{idUsuario}")]
+        public async Task<IActionResult> ListarBiblioteca(Guid idUsuario)
+        {
+            var resultado = await _bibliotecaService.ListarBibliotecaDoUsuarioAsync(idUsuario);
+            return Ok(resultado);
         }
 
         [HttpGet("recomendar-lenta")]

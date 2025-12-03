@@ -72,5 +72,116 @@ namespace Revisu.Infrastructure.Services.Biblioteca
 
             await _context.SaveChangesAsync();
         }
+
+        public async Task<PopularesResultadoDTO> ListarBibliotecaDoUsuarioAsync(Guid idUsuario)
+        {
+            var dados = await _context.Biblioteca
+                .Where(b => b.IdUsuario == idUsuario && b.Excluido == false)
+                .Include(b => b.Filmes)
+                    .ThenInclude(o => o.Generos)
+                .Include(b => b.Elenco)
+                    .ThenInclude(e => e.Obras)
+                        .ThenInclude(o => o.Generos)
+                .ToListAsync();
+
+            // Separando IDs marcados
+            var obrasMarcadas = dados
+                .Where(b => b.IdObra != null)
+                .Select(b => b.IdObra.Value)
+                .ToHashSet();
+
+            var elencoMarcados = dados
+                .Where(b => b.IdElenco != null)
+                .Select(b => b.IdElenco.Value)
+                .ToHashSet();
+
+            // -------------------------------
+            // 1) OBRAS
+            // -------------------------------
+
+            var obras = dados
+                .Where(b => b.Filmes != null)
+                .Select(b => b.Filmes)
+                .Distinct()
+                .ToList();
+
+            var obrasDto = obras.Select(o => new ObraDTO
+            {
+                IdObra = o.IdObra,
+                IdTmdb = o.IdTmdb,
+                Titulo = o.Nome,
+                Imagem = o.Imagem,
+                NotaMedia = o.NotaMedia,
+                Tipo = o.Tipo,
+                Marcado = obrasMarcadas.Contains(o.IdObra),
+                Generos = o.Generos.Select(g => g.Nome).ToList()
+
+            }).ToList();
+
+
+            // -------------------------------
+            // 2) ATORES
+            // -------------------------------
+
+            var atores = dados
+                .Where(b => b.Elenco != null && b.Elenco.Cargo.ToLower() == "ator")
+                .Select(b => b.Elenco)
+                .Distinct()
+                .ToList();
+
+            var atoresDto = atores.Select(a => new AtorDTO
+            {
+                IdElenco = a.IdElenco,
+                IdTmdb = a.IdTmdb,
+                Nome = a.Nome,
+                Foto = a.Foto,
+                Cargo = a.Cargo,
+                Sexo = a.Sexo,
+                Marcado = elencoMarcados.Contains(a.IdElenco),
+                Generos = a.Obras
+                    .SelectMany(o => o.Generos.Select(g => g.Nome))
+                    .Distinct()
+                    .ToList()
+
+            }).ToList();
+
+
+            // -------------------------------
+            // 3) DIRETORES
+            // -------------------------------
+
+            var diretores = dados
+                .Where(b => b.Elenco != null && b.Elenco.Cargo.ToLower() == "diretor")
+                .Select(b => b.Elenco)
+                .Distinct()
+                .ToList();
+
+            var diretoresDto = diretores.Select(d => new DiretorDTO
+            {
+                IdElenco = d.IdElenco,
+                IdTmdb = d.IdTmdb,
+                Nome = d.Nome,
+                Foto = d.Foto,
+                Cargo = d.Cargo,
+                Sexo = d.Sexo,
+                Marcado = elencoMarcados.Contains(d.IdElenco),
+                Obras = d.Obras.Select(o => o.Nome).ToList()
+
+            }).ToList();
+
+
+            // -------------------------------
+            // RESULTADO FINAL
+            // -------------------------------
+
+            return new PopularesResultadoDTO
+            {
+                Obras = obrasDto,
+                Atores = atoresDto,
+                Diretores = diretoresDto
+            };
+        }
+
+
     }
 }

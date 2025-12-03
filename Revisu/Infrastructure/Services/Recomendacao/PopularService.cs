@@ -23,40 +23,45 @@ public class PopularService
 
     public async Task<PopularesResultadoDTO> ObterPopularesAsync(Guid? idUsuario)
     {
-        // 1) Buscar IDs populares do TMDB
-        var filmes = await ObterTmdbIds("movie");
-        var series = await ObterTmdbIds("tv");
-        var ids = filmes.Concat(series).ToList();
+        // Buscar vários IDs do TMDB 
+        var filmes = await ObterTmdbIds("movie", 3);
+        var series = await ObterTmdbIds("tv", 3);
 
-        // 2) Buscar Obras
+        var ids = filmes.Concat(series).Distinct().ToList();
+
+        // Buscar Obras filtradas e limitar a 50
         var obrasNoBanco = await _db.Obras
             .Include(o => o.Generos)
-            .Where(o => ids.Contains(o.IdTmdb))
+            .Where(o =>
+                ids.Contains(o.IdTmdb) &&
+                o.NotaMedia > 0 &&
+                !string.IsNullOrWhiteSpace(o.Sinopse)
+            )
+            .OrderByDescending(o => o.Populariedade)
+            .Take(50) 
             .ToListAsync();
 
-        // 2.1) Obras marcadas
+        //  Obras e elenco marcados pelo usuário
         List<Guid> obrasMarcadas = new();
         List<Guid> elencoMarcados = new();
 
         if (idUsuario.HasValue && idUsuario.Value != Guid.Empty)
         {
-            // OBRAS MARCADAS
             obrasMarcadas = await _db.Biblioteca
                 .Where(b => b.IdUsuario == idUsuario.Value && b.IdObra != null)
                 .Select(b => b.IdObra!.Value)
                 .ToListAsync();
 
-            // ELENCO MARCADO
             elencoMarcados = await _db.Biblioteca
                 .Where(b => b.IdUsuario == idUsuario.Value && b.IdElenco != null)
                 .Select(b => b.IdElenco!.Value)
                 .ToListAsync();
         }
 
-        // 3) Atores e Diretores
+        // Atores e Diretores
         var elencoQuery = _db.Elencos
             .Include(e => e.Obras)
-            .ThenInclude(o => o.Generos)
+                .ThenInclude(o => o.Generos)
             .OrderByDescending(e => e.Popularidade);
 
         var atores = await elencoQuery
@@ -69,8 +74,8 @@ public class PopularService
             .Take(50)
             .ToListAsync();
 
-        // 4) Montar DTO
-        var resultado = new PopularesResultadoDTO
+        // DTO Final
+        return new PopularesResultadoDTO
         {
             Obras = obrasNoBanco.Select(o => new ObraDTO
             {
@@ -111,32 +116,40 @@ public class PopularService
                 Marcado = elencoMarcados.Contains(d.IdElenco),
                 Obras = d.Obras.Select(o => o.Nome).ToList()
 
-            }).ToList(),
+            }).ToList()
         };
-
-        return resultado;
     }
 
 
 
 
-    private async Task<List<int>> ObterTmdbIds(string tipo)
+
+
+    private async Task<List<int>> ObterTmdbIds(string tipo, int paginas = 1)
     {
-        string url = $"https://api.themoviedb.org/3/{tipo}/popular?api_key={_apiKey}&language=pt-BR&page=1";
+        var ids = new List<int>();
 
-        var response = await _http.GetFromJsonAsync<TmdbPopularResult>(url);
+        for (int i = 1; i <= paginas; i++)
+        {
+            string url = $"https://api.themoviedb.org/3/{tipo}/popular?api_key={_apiKey}&language=pt-BR&page={i}";
 
-        if (response?.results == null)
-            return new List<int>();
+            var response = await _http.GetFromJsonAsync<TmdbPopularResult>(url);
 
-        return response.results
-            .Take(25)
-            .Select(r => r.id)
-            .ToList();
+            if (response?.results != null)
+            {
+                ids.AddRange(
+                    response.results
+                        .Select(r => r.id)
+                );
+            }
+        }
+
+        return ids.Distinct().ToList();
     }
+
 }
 
-    public class TmdbPopularResult
+public class TmdbPopularResult
     {
         public List<TmdbPopularItem> results { get; set; }
     }

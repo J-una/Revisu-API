@@ -24,7 +24,7 @@ public class DetalhesService
 
     public async Task<SobrePessoaDTO?> ObterDetalhesPessoaAsync(Guid idElenco, Guid idUsuario)
     {
-        // 1) Pega o registro no banco
+        //  Pega o registro no banco
         var elenco = await _context.Elencos
             .FirstOrDefaultAsync(e => e.IdElenco == idElenco);
 

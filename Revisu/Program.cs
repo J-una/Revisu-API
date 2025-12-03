@@ -64,7 +64,7 @@ builder.Services.AddHttpClient("tmdb", (sp, client) =>
     var settings = sp.GetRequiredService<TmdbSettings>();
 
     client.BaseAddress = new Uri("https://api.themoviedb.org");
-    client.Timeout = TimeSpan.FromMinutes(5); // <<< AUMENTE O TIMEOUT
+    client.Timeout = TimeSpan.FromMinutes(5); 
     // Caso esteja usando Bearer (v4), descomente:
     // client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey);
 
