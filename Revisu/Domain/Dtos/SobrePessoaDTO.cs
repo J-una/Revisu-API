@@ -7,6 +7,7 @@ namespace Revisu.Domain.Dtos
         public string Biografia { get; set; }
         public string DataNascimento { get; set; }
         public string DataMorte { get; set; }
+        public string Cargo { get;set; }
         public string Sexo { get; set; }
         public string Nome { get; set; }
         public string Foto { get; set; }

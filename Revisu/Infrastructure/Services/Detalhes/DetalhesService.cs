@@ -48,6 +48,7 @@ public class DetalhesService
             Nome = resposta.name,
             Biografia = resposta.biography,
             DataNascimento = resposta.birthday,
+            Cargo= elenco.Cargo,
             DataMorte = resposta.deathday,
             Sexo = resposta.gender switch
             {

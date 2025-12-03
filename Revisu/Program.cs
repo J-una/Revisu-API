@@ -56,6 +56,8 @@ builder.Services.AddScoped<PesquisarService>();
 builder.Services.AddScoped<PopularService>();
 builder.Services.AddScoped<AvaliacaoUsuarioService>();
 builder.Services.AddScoped<AvaliacaoUsuarioRepository>();
+builder.Services.AddScoped<UsuarioService>();
+builder.Services.AddScoped<UsuarioRepository>();
 //builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("tmdb", (sp, client) =>
 {
