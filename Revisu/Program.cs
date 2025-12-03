@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Revisu.Data;
+using Revisu.Domain.Entities;
 using Revisu.Infrastructure;
+using Revisu.Infrastructure.Repositories;
 using Revisu.Infrastructure.Services;
+using Revisu.Infrastructure.Services.Avaliacao;
 using Revisu.Infrastructure.Services.Biblioteca;
 using Revisu.Infrastructure.Services.ImportacaoTmdb;
 using Revisu.Infrastructure.Services.Quiz;
@@ -51,6 +54,8 @@ builder.Services.AddScoped<RecomendacaoHybridService>();
 builder.Services.AddHttpClient<DetalhesService>();
 builder.Services.AddScoped<PesquisarService>();
 builder.Services.AddScoped<PopularService>();
+builder.Services.AddScoped<AvaliacaoUsuarioService>();
+builder.Services.AddScoped<AvaliacaoUsuarioRepository>();
 //builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("tmdb", (sp, client) =>
 {

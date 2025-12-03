@@ -173,6 +173,15 @@ namespace Revisu.Controllers
                 return StatusCode(500, new { erro = $"Erro ao atualizar gêneros das séries: {ex.Message}" });
             }
         }
+
+
+        [HttpPost("admin/atualizar-elencos-remover-impropios-atualizar-popularidade")]
+        public async Task<IActionResult> AtualizarElencos(
+            [FromServices] AtualizarElencoService service)
+        {
+            var result = await service.AtualizarTodosAsync();
+            return Ok(result);
+        }
     }
 }   
 

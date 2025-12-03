@@ -15,6 +15,7 @@ namespace Revisu.Data
         public DbSet<Avaliacoes> Avaliacoes { get; set; }
         public DbSet<Biblioteca> Biblioteca { get; set; }
         public DbSet<Elenco> Elencos { get; set; }
+        public DbSet<AvaliacaoUsuario> AvaliacaoUsuario { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

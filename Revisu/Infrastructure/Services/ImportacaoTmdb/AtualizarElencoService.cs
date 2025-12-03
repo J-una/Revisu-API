@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Revisu.Data;
+using Revisu.Domain.Dtos;
 using Revisu.Domain.Entities;
 using Revisu.Infrastructure;
 using System.Net;
@@ -128,6 +129,106 @@ namespace Revisu.Infrastructure.Services.ImportacaoTmdb
             return "Atualização de elenco concluída!";
         }
 
+        public async Task<string> AtualizarTodosAsync()
+        {
+            var elencos = await _db.Elencos
+                .OrderByDescending(e => e.Popularidade)
+                .ToListAsync();
+
+            int total = elencos.Count;
+
+            int batchSize = 500;
+            int maxParallel = 5;
+
+            int atualizados = 0;
+            int removidos = 0;
+
+            _logger.LogInformation("Iniciando atualização de {total} elencos...", total);
+
+            for (int i = 0; i < total; i += batchSize)
+            {
+                var batch = elencos.Skip(i).Take(batchSize).ToList();
+
+                _logger.LogInformation("Processando lote {lote} - Registros {inicio} até {fim}",
+                    (i / batchSize) + 1,
+                    i,
+                    i + batch.Count);
+
+                var semaphore = new SemaphoreSlim(maxParallel);
+
+                var tasks = batch.Select(async pessoa =>
+                {
+                    await semaphore.WaitAsync();
+                    try
+                    {
+                        _logger.LogInformation("Processando pessoa [{id}] {nome}", pessoa.IdTmdb, pessoa.Nome);
+
+                        await Task.Delay(_settings.DelayBetweenRequestsMs);
+
+                        var url = $"https://api.themoviedb.org/3/person/{pessoa.IdTmdb}?api_key={_settings.ApiKey}&language=pt-BR";
+
+                        _logger.LogDebug("Enviando request para TMDB: {url}", url);
+
+                        TmdbPersonResponse? tmdb = null;
+
+                        try
+                        {
+                            tmdb = await _http.GetFromJsonAsync<TmdbPersonResponse>(url);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Erro ao chamar o TMDB para pessoa {idTmdb}", pessoa.IdTmdb);
+                            return;
+                        }
+
+                        if (tmdb == null)
+                        {
+                            _logger.LogWarning("TMDB retornou NULL para pessoa {idTmdb}", pessoa.IdTmdb);
+                            return;
+                        }
+
+                        if (tmdb.adult)
+                        {
+                            _logger.LogWarning("Removendo pessoa {idTmdb} ({nome}) — classificado como adulto", pessoa.IdTmdb, pessoa.Nome);
+
+                            _db.Elencos.Remove(pessoa);
+                            Interlocked.Increment(ref removidos);
+                            return;
+                        }
+
+                        pessoa.Popularidade = tmdb.popularity;
+
+                        _logger.LogInformation("Atualizado → {nome} (ID TMDB: {idTmdb}) Nova popularidade: {pop}",
+                            pessoa.Nome, pessoa.IdTmdb, pessoa.Popularidade);
+
+                        Interlocked.Increment(ref atualizados);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Erro inesperado ao processar pessoa {idTmdb}", pessoa.IdTmdb);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                });
+
+                await Task.WhenAll(tasks);
+
+                // Salva por lote
+                await _db.SaveChangesAsync();
+
+                _logger.LogInformation("Lote finalizado e salvo no banco. Atualizados até agora: {a}, Removidos: {r}",
+                    atualizados, removidos);
+            }
+
+            _logger.LogInformation("PROCESSO FINALIZADO! Total atualizados: {a}, Removidos: {r}",
+                atualizados, removidos);
+
+            return $"Finalizado! Atualizados: {atualizados}, Removidos: {removidos}";
+        }
+
+
         private int LoadCheckpoint()
         {
             if (!File.Exists(CheckpointFile)) return 0;
@@ -153,6 +254,14 @@ namespace Revisu.Infrastructure.Services.ImportacaoTmdb
 
             [JsonPropertyName("crew")]
             public List<Person> Crew { get; set; } = new();
+        }
+
+        public class TmdbPersonResponse
+        {
+            public bool adult { get; set; }
+            public float popularity { get; set; }
+            public string name { get; set; }
+            public string profile_path { get; set; }
         }
 
         private class Person
