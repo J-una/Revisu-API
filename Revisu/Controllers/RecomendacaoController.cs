@@ -73,19 +73,11 @@ namespace Revisu.Controllers
         //}
 
         // Lista filmes aleatórios para gerar o quiz
-        [HttpPost("filmes-quiz")]
-        public async Task<IActionResult> QuizFilmes([FromBody] List<Guid>? idsJaUsados)
+        [HttpGet("obras-quiz")]
+        public async Task<IActionResult> QuizFilmes()
         {
-            var filmes = await _quizService.ListarFilmesRandomizadosAsync(idsJaUsados);
-            return Ok(filmes);
-        }
-
-        // Lista séries aleatórias para gerar o quiz
-        [HttpPost("series-quiz")]
-        public async Task<IActionResult> ListarSeries([FromBody] List<Guid>? idsJaUsados)
-        {
-            var series = await _quizService.ListarSeriesRandomizadasAsync(idsJaUsados);
-            return Ok(series);
+            var obras = await _quizService.ListarObrasRandomizadosAsync();
+            return Ok(obras);
         }
 
         //Salva os dados do quiz 

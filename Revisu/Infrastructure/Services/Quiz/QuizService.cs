@@ -17,25 +17,19 @@ namespace Revisu.Infrastructure.Services.Quiz
             _bibliotecaService = bibliotecaService;
         }
 
-        public async Task<List<QuizDTO>> ListarFilmesRandomizadosAsync(List<Guid>? idsJaUsados)
+        public async Task<List<QuizDTO>> ListarObrasRandomizadosAsync()
         {
             var query = _context.Obras
                 .Where(o =>
-                    o.Tipo == "Filme" &&
                     o.Populariedade != null &&
                     o.Populariedade > 10 &&
                     o.NotaMedia >= 5 &&
                     !string.IsNullOrWhiteSpace(o.Sinopse)
                 );
 
-            if (idsJaUsados != null && idsJaUsados.Any())
-            {
-                query = query.Where(o => !idsJaUsados.Contains(o.IdObra));
-            }
-
             return await query
                 .OrderBy(o => Guid.NewGuid())
-                .Take(4)
+                .Take(400)
                 .Select(o => new QuizDTO(
                     o.IdObra,
                     o.Nome,
