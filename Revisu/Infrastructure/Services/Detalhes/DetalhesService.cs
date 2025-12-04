@@ -45,6 +45,7 @@ public class DetalhesService
 
         return new SobrePessoaDTO
         {
+            IdElenco = elenco.IdElenco,
             Nome = resposta.name,
             Biografia = resposta.biography,
             DataNascimento = resposta.birthday,

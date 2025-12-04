@@ -4,6 +4,7 @@ namespace Revisu.Domain.Dtos
 {
     public class SobrePessoaDTO
     {
+        public Guid IdElenco { get; set; }
         public string Biografia { get; set; }
         public string DataNascimento { get; set; }
         public string DataMorte { get; set; }
@@ -11,7 +12,7 @@ namespace Revisu.Domain.Dtos
         public string Sexo { get; set; }
         public string Nome { get; set; }
         public string Foto { get; set; }
-        public bool Marcado { get; set; }
+        public bool Marcado  { get; set; }
     }
 
     public class TmdbPersonResponse

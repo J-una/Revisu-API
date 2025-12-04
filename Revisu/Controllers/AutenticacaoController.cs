@@ -44,12 +44,12 @@ public class AutenticacaoController : ControllerBase
     }
 
     [HttpGet("verificar-email")]
-    public async Task<IActionResult> VerificarEmail([FromQuery] string email)
+    public async Task<IActionResult> VerificarEmail([FromQuery] string email, [FromQuery] Guid? ignoreId)
     {
         if (string.IsNullOrWhiteSpace(email))
             return BadRequest("Email é obrigatório.");
 
-        bool existe = await _service.VerificarEmailJaCadastradoAsync(email);
+        bool existe = await _service.VerificarEmailJaCadastradoAsync(email, ignoreId);
 
         return Ok(new { emailExiste = existe });
     }

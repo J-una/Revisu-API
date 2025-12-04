@@ -92,10 +92,18 @@ public class UsuarioService
         };
     }
 
-    public async Task<bool> VerificarEmailJaCadastradoAsync(string email)
+    public async Task<bool> VerificarEmailJaCadastradoAsync(string email, Guid? ignoreId)
     {
         var existente = await _repo.ObterPorEmailAsync(email);
-        return existente != null;
+
+        if (existente == null)
+            return false; // email não existe, pode usar
+
+        // Se o email pertencer ao mesmo usuário que está editando, ignore
+        if (ignoreId.HasValue && existente.IdUsuario == ignoreId.Value)
+            return false;
+
+        return true; // email realmente existe e não é do próprio usuário
     }
 
 }
