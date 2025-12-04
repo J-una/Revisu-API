@@ -25,7 +25,7 @@ namespace Revisu.Infrastructure.Services.Quiz
                     o.Populariedade > 10 &&
                     o.NotaMedia >= 5 &&
                     !string.IsNullOrWhiteSpace(o.Sinopse)
-                );
+                ).Include(o => o.Generos); 
 
             return await query
                 .OrderBy(o => Guid.NewGuid())
@@ -33,38 +33,16 @@ namespace Revisu.Infrastructure.Services.Quiz
                 .Select(o => new QuizDTO(
                     o.IdObra,
                     o.Nome,
-                    o.Imagem
+                    o.Imagem,
+                    o.NotaMedia,
+                    o.Tipo,
+                    o.Generos.Select(g => g.Nome).ToList()
                 ))
                 .ToListAsync();
         }
 
 
-        public async Task<List<QuizDTO>> ListarSeriesRandomizadasAsync(List<Guid>? idsJaUsados)
-        {
-            var query = _context.Obras
-                .Where(o =>
-                    o.Tipo == "Serie" &&
-                    o.Populariedade != null &&
-                    o.Populariedade > 10 &&
-                    o.NotaMedia >= 5 &&
-                    !string.IsNullOrWhiteSpace(o.Sinopse)
-                );
 
-            if (idsJaUsados != null && idsJaUsados.Any())
-            {
-                query = query.Where(o => !idsJaUsados.Contains(o.IdObra));
-            }
-
-            return await query
-                .OrderBy(o => Guid.NewGuid())
-                .Take(4)
-                .Select(o => new QuizDTO(
-                    o.IdObra,
-                    o.Nome,
-                    o.Imagem
-                ))
-                .ToListAsync();
-        }
 
 
         public async Task SalvarObrasDoQuizAsync(Guid idUsuario, List<Guid> idObras)
