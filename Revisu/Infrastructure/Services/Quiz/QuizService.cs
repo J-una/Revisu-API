@@ -25,6 +25,7 @@ namespace Revisu.Infrastructure.Services.Quiz
                     o.Populariedade > 10 &&
                     o.NotaMedia >= 5 &&
                     !string.IsNullOrWhiteSpace(o.Sinopse)
+                    && o.Imagem != "Sem Poster"
                 ).Include(o => o.Generos); 
 
             return await query
