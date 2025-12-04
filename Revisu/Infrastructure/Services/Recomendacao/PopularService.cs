@@ -48,12 +48,12 @@ public class PopularService
         if (idUsuario.HasValue && idUsuario.Value != Guid.Empty)
         {
             obrasMarcadas = await _db.Biblioteca
-                .Where(b => b.IdUsuario == idUsuario.Value && b.IdObra != null)
+                .Where(b => b.IdUsuario == idUsuario.Value && b.IdObra != null && b.Excluido == false)
                 .Select(b => b.IdObra!.Value)
                 .ToListAsync();
 
             elencoMarcados = await _db.Biblioteca
-                .Where(b => b.IdUsuario == idUsuario.Value && b.IdElenco != null)
+                .Where(b => b.IdUsuario == idUsuario.Value && b.IdElenco != null && b.Excluido == false)
                 .Select(b => b.IdElenco!.Value)
                 .ToListAsync();
         }

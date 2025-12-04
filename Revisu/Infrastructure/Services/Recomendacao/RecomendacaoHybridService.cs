@@ -1004,7 +1004,7 @@ namespace Revisu.Recommendation
                         Cargo = e.Cargo,
                         Sexo = e.Sexo,
                         Generos = e.Obras.SelectMany(o => o.Generos.Select(g => g.Nome)).Distinct().ToList(),
-                        Marcado = watchedElenco.Contains(e.IdElenco) // 🔥 Corrigido
+                        Marcado = watchedElenco.Contains(e.IdElenco) 
                     })
                     .ToListAsync(cancellationToken);
             }
@@ -1021,7 +1021,7 @@ namespace Revisu.Recommendation
                         Cargo = e.Cargo,
                         Sexo = e.Sexo,
                         Obras = e.Obras.Select(o => o.Nome).Distinct().ToList(),
-                        Marcado = watchedElenco.Contains(e.IdElenco) // 🔥 Corrigido
+                        Marcado = watchedElenco.Contains(e.IdElenco) 
                     })
                     .ToListAsync(cancellationToken);
             }
@@ -1046,7 +1046,7 @@ namespace Revisu.Recommendation
                     NotaMedia = o.NotaMedia,
                     Tipo = o.Tipo,
                     Generos = o.Generos.Select(g => g.Nome).ToList(),
-                    Marcado = watchedIds.Contains(o.IdObra) // 🔥 Corrigido
+                    Marcado = watchedIds.Contains(o.IdObra) 
                 })
                 .ToListAsync(cancellationToken);
 

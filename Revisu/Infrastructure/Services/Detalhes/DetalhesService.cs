@@ -29,7 +29,7 @@ public class DetalhesService
             .FirstOrDefaultAsync(e => e.IdElenco == idElenco);
 
         var marcado = await _context.Biblioteca
-            .AnyAsync(e => e.IdElenco == idElenco && e.IdUsuario == idUsuario);
+            .AnyAsync(e => e.IdElenco == idElenco && e.IdUsuario == idUsuario && !e.Excluido);
 
         if (elenco == null)
             return null;
